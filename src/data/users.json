@@ -1,0 +1,94 @@
+{
+  "users": [
+    {
+      "clientId": "STR001",
+      "phone": "+5218112345001",
+      "name": "Carlos Martínez",
+      "email": "carlos.martinez@email.com",
+      "balance": 15420,
+      "registeredAt": "2025-01-15T10:30:00Z",
+      "bets": []
+    },
+    {
+      "clientId": "STR002",
+      "phone": "+5218112345002",
+      "name": "María González",
+      "email": "maria.gonzalez@email.com",
+      "balance": 8750,
+      "registeredAt": "2025-02-20T14:15:00Z",
+      "bets": []
+    },
+    {
+      "clientId": "STR003",
+      "phone": "+5218112345003",
+      "name": "Juan Rodríguez",
+      "email": "juan.rodriguez@email.com",
+      "balance": 3200,
+      "registeredAt": "2025-03-10T09:45:00Z",
+      "bets": []
+    },
+    {
+      "clientId": "STR004",
+      "phone": "+5218112345004",
+      "name": "Ana López",
+      "email": "ana.lopez@email.com",
+      "balance": 19800,
+      "registeredAt": "2025-01-28T16:20:00Z",
+      "bets": []
+    },
+    {
+      "clientId": "STR005",
+      "phone": "+5218112345005",
+      "name": "Pedro Sánchez",
+      "email": "pedro.sanchez@email.com",
+      "balance": 5600,
+      "registeredAt": "2025-04-05T11:00:00Z",
+      "bets": []
+    },
+    {
+      "clientId": "STR006",
+      "phone": "+5218112345006",
+      "name": "Laura Hernández",
+      "email": "laura.hernandez@email.com",
+      "balance": 12300,
+      "registeredAt": "2025-02-14T13:30:00Z",
+      "bets": []
+    },
+    {
+      "clientId": "STR007",
+      "phone": "+5218112345007",
+      "name": "Roberto Díaz",
+      "email": "roberto.diaz@email.com",
+      "balance": 1450,
+      "registeredAt": "2025-03-22T08:15:00Z",
+      "bets": []
+    },
+    {
+      "clientId": "STR008",
+      "phone": "+5218112345008",
+      "name": "Sofía Ramírez",
+      "email": "sofia.ramirez@email.com",
+      "balance": 17900,
+      "registeredAt": "2025-01-10T15:45:00Z",
+      "bets": []
+    },
+    {
+      "clientId": "STR009",
+      "phone": "+5218112345009",
+      "name": "Miguel Torres",
+      "email": "miguel.torres@email.com",
+      "balance": 6800,
+      "registeredAt": "2025-04-12T10:20:00Z",
+      "bets": []
+    },
+    {
+      "clientId": "STR010",
+      "phone": "+5218112345010",
+      "name": "Gabriela Flores",
+      "email": "gabriela.flores@email.com",
+      "balance": 11200,
+      "registeredAt": "2025-02-28T12:00:00Z",
+      "bets": []
+    }
+  ]
+}
