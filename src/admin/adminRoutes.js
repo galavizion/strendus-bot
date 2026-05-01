@@ -5,6 +5,7 @@ const router = express.Router();
 
 const strendusAPI = require('../services/strendusAPI');
 const whatsappService = require('../services/whatsappService');
+const oddsService = require('../services/oddsService');
 
 const CONFIG_PATH = path.join(__dirname, '../config/botConfig.json');
 
@@ -93,6 +94,24 @@ router.delete('/api/users/:phone', adminAuth, (req, res) => {
   strendusAPI.saveUsers();
 
   res.json({ success: true });
+});
+
+// --- Games (Odds cache) ---
+router.get('/api/games', adminAuth, (req, res) => {
+  res.json({
+    games: oddsService.cache.games,
+    lastUpdate: oddsService.cache.lastUpdate,
+    total: oddsService.cache.games.length
+  });
+});
+
+router.post('/api/refresh-odds', adminAuth, async (req, res) => {
+  try {
+    const games = await oddsService.fetchAllOdds();
+    res.json({ success: true, gamesUpdated: games.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // --- Bets ---

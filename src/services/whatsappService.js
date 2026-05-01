@@ -160,7 +160,8 @@ class WhatsAppService {
         { id: 'btn_odds', title: '📊 Ver momios' },
         { id: 'btn_history', title: '📋 Mis apuestas' },
         { id: 'btn_balance', title: '💰 Mi saldo' }
-      ]
+      ],
+      footer: this.getFooter('welcome')
     };
   }
 
@@ -308,7 +309,8 @@ class WhatsAppService {
       buttons: [
         { id: `confirm_${Date.now()}`, title: '✅ Confirmar' },
         { id: 'cancel_bet', title: '❌ Cancelar' }
-      ]
+      ],
+      footer: this.getFooter('betConfirm')
     };
   }
 

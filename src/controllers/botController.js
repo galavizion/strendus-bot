@@ -135,8 +135,7 @@ class BotController {
 
     const { name, balance } = verification.user;
     const msgData = whatsappService.buildWelcomeMessage(name, balance);
-    
-    return whatsappService.sendButtons(from, msgData.body, msgData.buttons);
+    return whatsappService.sendButtons(from, msgData.body, msgData.buttons, null, msgData.footer);
   }
 
   /**
@@ -149,7 +148,7 @@ class BotController {
       { id: 'confirm_balance_no', title: '❌ No' }
     ];
 
-    return whatsappService.sendButtons(from, body, buttons);
+    return whatsappService.sendButtons(from, body, buttons, null, whatsappService.getFooter('balanceConfirm'));
   }
 
   /**
@@ -630,8 +629,7 @@ class BotController {
     // Usuario verificado exitosamente
     const { name, balance } = result.user;
     const msgData = whatsappService.buildWelcomeMessage(name, balance);
-    
-    return whatsappService.sendButtons(from, msgData.body, msgData.buttons);
+    return whatsappService.sendButtons(from, msgData.body, msgData.buttons, null, msgData.footer);
   }
 
   /**

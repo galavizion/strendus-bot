@@ -176,6 +176,7 @@
 <nav>
   <button class="active" onclick="switchTab('users', this)">👥 Usuarios</button>
   <button onclick="switchTab('bets', this)">📊 Apuestas</button>
+  <button onclick="switchTab('games', this)">🏟️ Juegos del día</button>
   <button onclick="switchTab('config', this)">⚙️ Configuración</button>
 </nav>
 
@@ -247,6 +248,18 @@
     </div>
   </div>
 
+  <!-- ======== GAMES TAB ======== -->
+  <div id="tab-games" class="tab-panel">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <h2>🏟️ Juegos del día por deporte</h2>
+        <button class="btn btn-primary" onclick="refreshOdds(this)">🔄 Actualizar momios ahora</button>
+      </div>
+      <div id="api-status" style="margin-top:14px;font-size:13px;color:var(--muted)">Cargando...</div>
+    </div>
+    <div id="games-by-sport"></div>
+  </div>
+
   <!-- ======== CONFIG TAB ======== -->
   <div id="tab-config" class="tab-panel">
     <div class="card">
@@ -277,6 +290,22 @@
         <div class="config-row">
           <label>Cancelar apuesta</label>
           <input type="text" id="cfg-footer-cancelBet" placeholder="Solo antes de 20 min del inicio">
+        </div>
+      </div>
+
+      <div class="config-section">
+        <h3>Footer de mensajes con botones</h3>
+        <div class="config-row">
+          <label>Bienvenida (usuario registrado)</label>
+          <input type="text" id="cfg-footer-welcome" placeholder="Ej: Apuesta con responsabilidad">
+        </div>
+        <div class="config-row">
+          <label>Confirmar ver saldo</label>
+          <input type="text" id="cfg-footer-balanceConfirm" placeholder="Ej: Solo tú puedes ver esta info">
+        </div>
+        <div class="config-row">
+          <label>Confirmar apuesta</label>
+          <input type="text" id="cfg-footer-betConfirm" placeholder="Tienes 60 segundos para confirmar">
         </div>
       </div>
 
@@ -385,6 +414,7 @@
     btn.classList.add('active');
     if (tab === 'users') loadUsers();
     if (tab === 'bets') loadBets();
+    if (tab === 'games') loadGames();
     if (tab === 'config') loadConfig();
   }
 
@@ -539,6 +569,103 @@
   }
 
   // ============================================================
+  // GAMES
+  // ============================================================
+  const SPORTS_META = {
+    'basketball_nba':       { name: 'NBA',     emoji: '🏀' },
+    'baseball_mlb':         { name: 'MLB',     emoji: '⚾' },
+    'soccer_mexico_ligamx': { name: 'Liga MX', emoji: '⚽' }
+  };
+
+  async function loadGames() {
+    document.getElementById('api-status').textContent = 'Cargando...';
+    document.getElementById('games-by-sport').innerHTML = '';
+    try {
+      const data = await api('GET', '/games');
+
+      const lastUpdate = data.lastUpdate
+        ? new Date(data.lastUpdate).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })
+        : 'Nunca';
+
+      document.getElementById('api-status').innerHTML =
+        `<strong>Última actualización:</strong> ${lastUpdate} &nbsp;•&nbsp; ` +
+        `<strong>Total en caché:</strong> ${data.total} partidos`;
+
+      let html = '';
+      Object.entries(SPORTS_META).forEach(([key, sport]) => {
+        const games = data.games.filter(g => g.sport_key === key);
+        const now = new Date();
+
+        let tableHtml = '';
+        if (games.length === 0) {
+          tableHtml = '<p style="color:var(--muted);padding:8px 0">Sin partidos en la API para este deporte.</p>';
+        } else {
+          const rows = games.map(g => {
+            const bookmaker = g.bookmakers?.[0];
+            const outcomes = bookmaker?.markets?.[0]?.outcomes || [];
+            const homeOdds = outcomes.find(o => o.name === g.home_team)?.price ?? '—';
+            const awayOdds = outcomes.find(o => o.name === g.away_team)?.price ?? '—';
+            const drawOdds = outcomes.find(o => o.name === 'Draw')?.price;
+            const gameTime = new Date(g.commence_time);
+            const minutesUntil = Math.round((gameTime - now) / 60000);
+            const dateStr = gameTime.toLocaleString('es-MX', {
+              dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Mexico_City'
+            });
+            const statusBadge = minutesUntil > 30
+              ? `<span class="badge badge-won">Disponible</span>`
+              : minutesUntil > 0
+                ? `<span class="badge badge-pending">Cierra pronto</span>`
+                : `<span class="badge badge-cancelled">Iniciado</span>`;
+            return `<tr>
+              <td><strong>${esc(g.home_team)}</strong></td>
+              <td>${esc(g.away_team)}</td>
+              <td style="font-weight:600;color:var(--primary)">${homeOdds}</td>
+              <td style="color:var(--muted)">${drawOdds ?? '—'}</td>
+              <td style="font-weight:600;color:var(--primary)">${awayOdds}</td>
+              <td style="font-size:12px;color:var(--muted)">${dateStr}</td>
+              <td>${statusBadge}</td>
+            </tr>`;
+          }).join('');
+
+          tableHtml = `<div style="overflow-x:auto"><table>
+            <thead><tr>
+              <th>Local</th><th>Visitante</th><th>Cuota local</th>
+              <th>Empate</th><th>Cuota visitante</th><th>Fecha (CDMX)</th><th>Estado</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table></div>`;
+        }
+
+        html += `<div class="card">
+          <h2>${sport.emoji} ${sport.name} — ${games.length} partido${games.length !== 1 ? 's' : ''}</h2>
+          ${tableHtml}
+        </div>`;
+      });
+
+      document.getElementById('games-by-sport').innerHTML = html;
+    } catch (e) {
+      document.getElementById('api-status').textContent = 'Error cargando juegos.';
+      document.getElementById('games-by-sport').innerHTML =
+        `<div class="alert alert-error" style="display:block">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  async function refreshOdds(btn) {
+    const original = btn.textContent;
+    btn.textContent = '⏳ Actualizando...';
+    btn.disabled = true;
+    try {
+      const result = await api('POST', '/refresh-odds', {});
+      btn.textContent = `✅ ${result.gamesUpdated} partidos`;
+      setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 3000);
+      loadGames();
+    } catch (e) {
+      btn.textContent = '❌ ' + e.message.substring(0, 30);
+      setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 4000);
+    }
+  }
+
+  // ============================================================
   // BETS
   // ============================================================
   async function loadBets() {
@@ -602,11 +729,14 @@
       const f = cfg.footers || {};
       const b = cfg.listButtons || {};
 
-      document.getElementById('cfg-footer-sports').value    = f.sports    || '';
-      document.getElementById('cfg-footer-games').value     = f.games     || '';
-      document.getElementById('cfg-footer-betAmounts').value= f.betAmounts|| '';
-      document.getElementById('cfg-footer-betHistory').value= f.betHistory|| '';
-      document.getElementById('cfg-footer-cancelBet').value = f.cancelBet || '';
+      document.getElementById('cfg-footer-sports').value       = f.sports       || '';
+      document.getElementById('cfg-footer-games').value        = f.games        || '';
+      document.getElementById('cfg-footer-betAmounts').value   = f.betAmounts   || '';
+      document.getElementById('cfg-footer-betHistory').value   = f.betHistory   || '';
+      document.getElementById('cfg-footer-cancelBet').value    = f.cancelBet    || '';
+      document.getElementById('cfg-footer-welcome').value      = f.welcome      || '';
+      document.getElementById('cfg-footer-balanceConfirm').value = f.balanceConfirm || '';
+      document.getElementById('cfg-footer-betConfirm').value   = f.betConfirm   || '';
 
       document.getElementById('cfg-btn-sports').value  = b.sports  || '';
       document.getElementById('cfg-btn-games').value   = b.games   || '';
@@ -623,11 +753,14 @@
     try {
       const cfg = {
         footers: {
-          sports:     document.getElementById('cfg-footer-sports').value,
-          games:      document.getElementById('cfg-footer-games').value,
-          betAmounts: document.getElementById('cfg-footer-betAmounts').value,
-          betHistory: document.getElementById('cfg-footer-betHistory').value,
-          cancelBet:  document.getElementById('cfg-footer-cancelBet').value
+          sports:         document.getElementById('cfg-footer-sports').value,
+          games:          document.getElementById('cfg-footer-games').value,
+          betAmounts:     document.getElementById('cfg-footer-betAmounts').value,
+          betHistory:     document.getElementById('cfg-footer-betHistory').value,
+          cancelBet:      document.getElementById('cfg-footer-cancelBet').value,
+          welcome:        document.getElementById('cfg-footer-welcome').value,
+          balanceConfirm: document.getElementById('cfg-footer-balanceConfirm').value,
+          betConfirm:     document.getElementById('cfg-footer-betConfirm').value
         },
         listButtons: {
           sports:  document.getElementById('cfg-btn-sports').value,
