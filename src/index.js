@@ -227,8 +227,8 @@ async function startServer() {
     console.log('🔄 Cargando momios iniciales...');
     await oddsService.fetchAllOdds();
 
-    // Configurar actualización automática de momios cada 2 minutos
-    cron.schedule('*/2 * * * *', async () => {
+    // Actualizar momios cada 6 horas (free tier: 500 req/mes = ~5/día × 3 sports)
+    cron.schedule('0 */6 * * *', async () => {
       console.log('🔄 Actualizando momios automáticamente...');
       await oddsService.fetchAllOdds();
     });

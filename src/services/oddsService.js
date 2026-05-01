@@ -61,13 +61,22 @@ class OddsService {
         timeout: 10000
       });
 
+      const remaining = response.headers['x-requests-remaining'];
+      if (remaining !== undefined) {
+        console.log(`📊 Odds API — requests restantes: ${remaining}`);
+      }
+
       return response.data.map(game => ({
         ...game,
         sport_key: sportKey,
         sport_title: this.getSportTitle(sportKey)
       }));
     } catch (error) {
-      console.error(`❌ Error obteniendo ${sportKey}:`, error.message);
+      if (error.response?.status === 422 || error.response?.status === 401) {
+        console.error(`❌ Odds API: quota agotada o API key inválida. Respuesta: ${JSON.stringify(error.response?.data)}`);
+      } else {
+        console.error(`❌ Error obteniendo ${sportKey}:`, error.message);
+      }
       return [];
     }
   }
