@@ -583,14 +583,18 @@
     try {
       const data = await api('GET', '/events');
 
+      const oddsCacheCount = data.oddsCacheCount || 0;
+      let oddsNote;
       if (data.error) {
-        document.getElementById('api-status').innerHTML =
-          `<span style="color:var(--error)">⚠️ ${esc(data.error)}</span>`;
+        oddsNote = `<span style="color:var(--error)">⚠️ ${esc(data.error)}</span>`;
+      } else if (oddsCacheCount > 0) {
+        const updStr = new Date(data.oddsLastUpdate).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+        oddsNote = `<span style="color:var(--success)">✅ ${oddsCacheCount} partidos con momios</span> — actualizados ${updStr}`;
+      } else if (data.oddsLastUpdate) {
+        oddsNote = `<span style="color:var(--warning)">⚠️ Caché de momios vacío (posible cuota agotada)</span> — usa "Actualizar momios ahora"`;
+      } else {
+        oddsNote = `<span style="color:var(--muted)">Sin momios — pulsa "Actualizar momios ahora" para cargarlos</span>`;
       }
-
-      const oddsNote = data.oddsLastUpdate
-        ? `Momios en caché: ${new Date(data.oddsLastUpdate).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}`
-        : 'Momios: no cargados — usa "Actualizar momios ahora" para verlos';
 
       document.getElementById('api-status').innerHTML =
         `<strong>${data.total} eventos próximos</strong> &nbsp;•&nbsp; ${oddsNote}`;

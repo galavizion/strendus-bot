@@ -109,22 +109,36 @@ router.get('/api/games', adminAuth, (req, res) => {
 router.get('/api/events', adminAuth, async (req, res) => {
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {
-    return res.json({ events: [], total: 0, error: 'ODDS_API_KEY no está configurada en Railway.' });
+    return res.json({ events: [], total: 0, oddsCacheCount: 0, error: 'ODDS_API_KEY no está configurada en Railway.' });
   }
   try {
     const events = await oddsService.fetchAllEvents();
-    // Enriquecer con momios del caché si están disponibles
+    const oddsGames = oddsService.cache.games;
+
+    // Build ID map for O(1) lookup
+    const oddsById = {};
+    oddsGames.forEach(g => { oddsById[g.id] = g; });
+
+    // Merge: prefer cached game (has bookmakers/odds) when IDs match
+    const seenIds = new Set();
     const enriched = events.map(ev => {
-      const cached = oddsService.cache.games.find(g => g.id === ev.id);
-      return cached || ev;
+      seenIds.add(ev.id);
+      return oddsById[ev.id] || ev;
     });
+
+    // Include cached odds games not returned by events endpoint
+    oddsGames.forEach(g => {
+      if (!seenIds.has(g.id)) enriched.push(g);
+    });
+
     res.json({
       events: enriched,
       total: enriched.length,
-      oddsLastUpdate: oddsService.cache.lastUpdate
+      oddsLastUpdate: oddsService.cache.lastUpdate,
+      oddsCacheCount: oddsGames.length
     });
   } catch (e) {
-    res.json({ events: [], total: 0, error: e.message });
+    res.json({ events: [], total: 0, oddsCacheCount: 0, error: e.message });
   }
 });
 
@@ -136,11 +150,13 @@ router.post('/api/refresh-odds', adminAuth, async (req, res) => {
 
   try {
     const games = await oddsService.fetchAllOdds();
-    res.json({
-      success: true,
-      gamesUpdated: games.length,
-      keyConfigured: true
-    });
+    if (games.length === 0) {
+      return res.json({
+        success: false,
+        error: 'Se obtuvieron 0 partidos. La cuota puede estar agotada (error 422) o no hay eventos con momios activos. Revisa los logs de Railway para más detalles.'
+      });
+    }
+    res.json({ success: true, gamesUpdated: games.length });
   } catch (e) {
     res.status(200).json({ success: false, error: e.message });
   }
