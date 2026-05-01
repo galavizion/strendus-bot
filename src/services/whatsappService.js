@@ -1,10 +1,34 @@
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WHATSAPP_API_URL = `https://graph.facebook.com/v21.0/${PHONE_NUMBER_ID}/messages`;
+const CONFIG_PATH = path.join(__dirname, '../config/botConfig.json');
 
 class WhatsAppService {
+  constructor() {
+    this.loadConfig();
+  }
+
+  loadConfig() {
+    try {
+      const data = fs.readFileSync(CONFIG_PATH, 'utf8');
+      this.config = JSON.parse(data);
+    } catch (e) {
+      this.config = { footers: {}, listButtons: {} };
+    }
+  }
+
+  getFooter(key) {
+    return this.config?.footers?.[key] || '';
+  }
+
+  getListButton(key) {
+    return this.config?.listButtons?.[key] || 'Ver opciones';
+  }
+
   /**
    * Enviar mensaje a WhatsApp
    */
@@ -24,7 +48,7 @@ class WhatsAppService {
           }
         }
       );
-      
+
       console.log(`✅ Mensaje enviado a ${to}`);
       return response.data;
     } catch (error) {
@@ -44,20 +68,20 @@ class WhatsAppService {
   }
 
   /**
-   * Enviar mensaje con botones
+   * Enviar mensaje con botones (máx 3 botones en WhatsApp)
    */
-  async sendButtons(to, body, buttons, header = null) {
+  async sendButtons(to, body, buttons, header = null, footer = null) {
     const message = {
       type: 'interactive',
       interactive: {
         type: 'button',
         body: { text: body },
         action: {
-          buttons: buttons.map((btn, idx) => ({
+          buttons: buttons.slice(0, 3).map((btn, idx) => ({
             type: 'reply',
             reply: {
               id: btn.id || `btn_${idx}`,
-              title: btn.title.substring(0, 20) // WhatsApp limita a 20 caracteres
+              title: btn.title.substring(0, 20)
             }
           }))
         }
@@ -66,6 +90,10 @@ class WhatsAppService {
 
     if (header) {
       message.interactive.header = { type: 'text', text: header };
+    }
+
+    if (footer) {
+      message.interactive.footer = { text: footer };
     }
 
     return this.sendMessage(to, message);
@@ -156,28 +184,16 @@ class WhatsAppService {
     return {
       header: 'Apuestas disponibles',
       body: '📊 Selecciona un deporte para ver los momios actuales:',
-      buttonText: 'Ver deportes',
+      buttonText: this.getListButton('sports'),
       sections: [{
         title: 'Deportes disponibles',
         rows: [
-          {
-            id: 'sport_nba',
-            title: '🏀 NBA',
-            description: 'Basquetbol profesional'
-          },
-          {
-            id: 'sport_mlb',
-            title: '⚾ MLB',
-            description: 'Beisbol profesional'
-          },
-          {
-            id: 'sport_ligamx',
-            title: '⚽ Liga MX',
-            description: 'Fútbol mexicano'
-          }
+          { id: 'sport_nba',    title: '🏀 NBA',    description: 'Basquetbol profesional' },
+          { id: 'sport_mlb',    title: '⚾ MLB',    description: 'Beisbol profesional' },
+          { id: 'sport_ligamx', title: '⚽ Liga MX', description: 'Fútbol mexicano' }
         ]
       }],
-      footer: 'Actualizado hace 2 min'
+      footer: this.getFooter('sports')
     };
   }
 
@@ -185,9 +201,7 @@ class WhatsAppService {
    * Construir lista de partidos
    */
   buildGamesListMessage(games, sportEmoji, sportTitle) {
-    if (games.length === 0) {
-      return null; // Indicar que no hay partidos
-    }
+    if (games.length === 0) return null;
 
     const rows = games.map(game => {
       const date = this.formatGameDate(game.commence_time);
@@ -201,12 +215,28 @@ class WhatsAppService {
     return {
       header: `${sportEmoji} ${sportTitle}`,
       body: 'Selecciona un partido para apostar:',
-      buttonText: 'Ver partidos',
-      sections: [{
-        title: `Próximos ${games.length} partidos`,
-        rows: rows
-      }],
-      footer: sportTitle
+      buttonText: this.getListButton('games'),
+      sections: [{ title: `Próximos ${games.length} partidos`, rows }],
+      footer: this.getFooter('games')
+    };
+  }
+
+  /**
+   * Construir lista de montos de apuesta
+   */
+  buildAmountsListMessage(team, odds, potentialWins, body) {
+    const rows = [
+      { id: 'amount_200',    title: '$200',         description: `Ganarías $${potentialWins[200].toLocaleString('es-MX')}` },
+      { id: 'amount_500',    title: '$500',         description: `Ganarías $${potentialWins[500].toLocaleString('es-MX')}` },
+      { id: 'amount_1000',   title: '$1,000',       description: `Ganarías $${potentialWins[1000].toLocaleString('es-MX')}` },
+      { id: 'amount_custom', title: 'Otra cantidad', description: 'Escribe el monto manualmente' }
+    ];
+
+    return {
+      body,
+      buttonText: this.getListButton('amounts'),
+      sections: [{ title: 'Montos disponibles', rows }],
+      footer: this.getFooter('betAmounts')
     };
   }
 
@@ -216,16 +246,12 @@ class WhatsAppService {
   buildGameBettingMessage(game, sportEmoji) {
     const date = this.formatGameDate(game.commence_time);
     const bookmaker = game.bookmakers?.[0];
-    
-    if (!bookmaker) {
-      return null;
-    }
+
+    if (!bookmaker) return null;
 
     const outcomes = bookmaker.markets?.[0]?.outcomes || [];
-    
-    // Determinar si hay empate (fútbol)
     const hasDraw = outcomes.some(o => o.name === 'Draw');
-    
+
     let body = `${sportEmoji} ${game.home_team} vs ${game.away_team}\n`;
     body += `📍 ${this.getStadium(game)}\n`;
     body += `📅 ${date}\n\n`;
@@ -233,8 +259,7 @@ class WhatsAppService {
     body += `──────────\n${game.sport_title}`;
 
     const buttons = [];
-    
-    // Equipo local
+
     const homeOdds = outcomes.find(o => o.name === game.home_team);
     if (homeOdds) {
       buttons.push({
@@ -243,7 +268,6 @@ class WhatsAppService {
       });
     }
 
-    // Empate (si aplica)
     if (hasDraw) {
       const drawOdds = outcomes.find(o => o.name === 'Draw');
       if (drawOdds) {
@@ -254,7 +278,6 @@ class WhatsAppService {
       }
     }
 
-    // Equipo visitante
     const awayOdds = outcomes.find(o => o.name === game.away_team);
     if (awayOdds) {
       buttons.push({
@@ -271,7 +294,7 @@ class WhatsAppService {
    */
   buildBetConfirmationMessage(betData, currentBalance) {
     const { game, team, odds, amount, potentialWin } = betData;
-    
+
     const body = `📋 Confirma tu apuesta:\n\n` +
                  `${game.home_team} vs ${game.away_team}\n` +
                  `Apuestas a: ${team} (${odds})\n\n` +
@@ -302,8 +325,8 @@ class WhatsAppService {
     else if (diffDays === 1) dayText = 'Mañana';
     else dayText = date.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
 
-    const time = date.toLocaleTimeString('es-MX', { 
-      hour: '2-digit', 
+    const time = date.toLocaleTimeString('es-MX', {
+      hour: '2-digit',
       minute: '2-digit',
       hour12: true,
       timeZone: 'America/Mexico_City'
@@ -316,7 +339,6 @@ class WhatsAppService {
    * Obtener estadio (simulado)
    */
   getStadium(game) {
-    // Aquí se podría integrar una API de estadios, por ahora retornamos genérico
     return 'Por definir';
   }
 }

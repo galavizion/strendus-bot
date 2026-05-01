@@ -289,14 +289,8 @@ class BotController {
                  `Si apuestas $500, ganarías $${potentialWins[500].toLocaleString('es-MX')}\n\n` +
                  `¿Cuánto quieres apostar?`;
 
-    const buttons = [
-      { id: 'amount_200', title: `$200` },
-      { id: 'amount_500', title: `$500` },
-      { id: 'amount_1000', title: `$1,000` },
-      { id: 'amount_custom', title: 'Otra cantidad' }
-    ];
-
-    return whatsappService.sendButtons(from, body, buttons);
+    const msgData = whatsappService.buildAmountsListMessage(team, odds, potentialWins, body);
+    return whatsappService.sendList(from, msgData.body, msgData.buttonText, msgData.sections, null, msgData.footer);
   }
 
   /**
@@ -453,9 +447,10 @@ class BotController {
     return whatsappService.sendList(
       from,
       'Selecciona una apuesta para ver detalles:',
-      'Ver apuestas',
+      whatsappService.getListButton('history'),
       [{ title: `Últimas ${bets.length} apuestas`, rows }],
-      '📋 Historial de apuestas'
+      '📋 Historial de apuestas',
+      whatsappService.getFooter('betHistory')
     );
   }
 
@@ -527,9 +522,10 @@ class BotController {
     return whatsappService.sendList(
       from,
       'Selecciona una apuesta para cancelar:',
-      'Ver apuestas',
+      whatsappService.getListButton('cancel'),
       [{ title: `${pendingBets.length} apuestas pendientes`, rows }],
-      '🚫 Cancelar apuesta'
+      '🚫 Cancelar apuesta',
+      whatsappService.getFooter('cancelBet')
     );
   }
 

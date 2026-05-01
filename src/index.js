@@ -8,12 +8,16 @@ const oddsService = require('./services/oddsService');
 const resultsService = require('./services/resultsService');
 const whatsappService = require('./services/whatsappService');
 const botController = require('./controllers/botController');
+const adminRouter = require('./admin/adminRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(bodyParser.json());
+
+// Panel de administración
+app.use('/admin', adminRouter);
 
 // ============================================
 // WEBHOOK DE WHATSAPP

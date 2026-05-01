@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Strendus Bot — Admin</title>
+  <style>
+    :root {
+      --primary: #6366f1;
+      --primary-dark: #4f46e5;
+      --success: #10b981;
+      --error: #ef4444;
+      --warning: #f59e0b;
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --header: #0f172a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* Login overlay */
+    #login-overlay {
+      position: fixed; inset: 0; background: rgba(15,23,42,0.85);
+      display: flex; align-items: center; justify-content: center; z-index: 999;
+    }
+    .login-box {
+      background: white; border-radius: 16px; padding: 40px 48px; text-align: center;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.4); min-width: 320px;
+    }
+    .login-box h2 { font-size: 22px; margin-bottom: 8px; }
+    .login-box p { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+    .login-box input {
+      width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 15px; margin-bottom: 12px; outline: none;
+    }
+    .login-box input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
+    .login-error { color: var(--error); font-size: 13px; margin-bottom: 12px; min-height: 18px; }
+
+    /* Header */
+    header {
+      background: var(--header); color: white; padding: 14px 28px;
+      display: flex; align-items: center; gap: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.3);
+    }
+    header .logo { font-size: 26px; }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header span { font-size: 12px; color: #94a3b8; }
+
+    /* Nav */
+    nav {
+      background: white; border-bottom: 1px solid var(--border);
+      padding: 0 28px; display: flex; gap: 0;
+    }
+    nav button {
+      padding: 14px 22px; border: none; background: none; cursor: pointer;
+      font-size: 14px; font-weight: 500; color: var(--muted);
+      border-bottom: 2px solid transparent; transition: all .15s;
+    }
+    nav button:hover { color: var(--primary); }
+    nav button.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+    /* Main */
+    main { max-width: 1280px; margin: 28px auto; padding: 0 28px; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Stats bar */
+    .stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; }
+    .stat-card .label { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+    .stat-card .value { font-size: 30px; font-weight: 800; margin-top: 6px; color: var(--text); }
+
+    /* Card */
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
+    .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 18px; }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { text-align: left; padding: 10px 14px; background: #f8fafc; border-bottom: 2px solid var(--border); font-weight: 600; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+    td { padding: 13px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+
+    /* Form */
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    input[type="text"], input[type="number"], input[type="email"], input[type="tel"], input[type="password"] {
+      padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 14px; outline: none; transition: border-color .15s; width: 100%;
+    }
+    input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
+
+    /* Buttons */
+    .btn { padding: 9px 18px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; transition: all .15s; }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-success { background: var(--success); color: white; }
+    .btn-success:hover { background: #059669; }
+    .btn-danger { background: #fee2e2; color: var(--error); }
+    .btn-danger:hover { background: var(--error); color: white; }
+    .btn-sm { padding: 5px 12px; font-size: 13px; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-outline:hover { background: var(--bg); }
+
+    /* Badges */
+    .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .badge-pending { background: #fef3c7; color: #92400e; }
+    .badge-won { background: #d1fae5; color: #065f46; }
+    .badge-lost { background: #fee2e2; color: #991b1b; }
+    .badge-cancelled { background: #f1f5f9; color: #475569; }
+
+    /* Alerts */
+    .alert { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; font-weight: 500; display: none; }
+    .alert-success { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
+    .alert-error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+
+    /* Config */
+    .config-section { margin-bottom: 28px; }
+    .config-section h3 { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+    .config-row { display: grid; grid-template-columns: 200px 1fr; align-items: center; gap: 14px; margin-bottom: 10px; }
+    .config-row label { font-size: 14px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--text); }
+
+    /* Filters */
+    .filter-bar { display: flex; gap: 12px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+    select { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; outline: none; background: white; cursor: pointer; }
+    select:focus { border-color: var(--primary); }
+
+    /* Empty state */
+    .empty { text-align: center; padding: 48px; color: var(--muted); font-size: 15px; }
+
+    /* Loading */
+    .loading { text-align: center; padding: 40px; color: var(--muted); }
+
+    /* Inline edit */
+    .editable-balance { display: flex; align-items: center; gap: 8px; }
+    .balance-display { font-weight: 700; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+    .balance-display:hover { background: #f1f5f9; }
+    .balance-edit { display: none; }
+    .balance-edit input { width: 100px; padding: 4px 8px; border: 1px solid var(--primary); border-radius: 6px; font-size: 14px; }
+
+    @media (max-width: 768px) {
+      .stats-bar { grid-template-columns: repeat(2, 1fr); }
+      .config-row { grid-template-columns: 1fr; }
+      main { padding: 0 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Login overlay -->
+<div id="login-overlay">
+  <div class="login-box">
+    <div style="font-size:40px;margin-bottom:12px">🎰</div>
+    <h2>Strendus Admin</h2>
+    <p>Ingresa la contraseña de administrador</p>
+    <div id="login-error" class="login-error"></div>
+    <input type="password" id="login-password" placeholder="Contraseña" onkeydown="if(event.key==='Enter')login()">
+    <button class="btn btn-primary" style="width:100%;padding:11px" onclick="login()">Entrar</button>
+  </div>
+</div>
+
+<!-- Header -->
+<header>
+  <div class="logo">🎰</div>
+  <div>
+    <h1>Strendus Bot — Admin</h1>
+    <span>Panel de administración</span>
+  </div>
+</header>
+
+<!-- Navigation -->
+<nav>
+  <button class="active" onclick="switchTab('users', this)">👥 Usuarios</button>
+  <button onclick="switchTab('bets', this)">📊 Apuestas</button>
+  <button onclick="switchTab('config', this)">⚙️ Configuración</button>
+</nav>
+
+<main>
+
+  <!-- ======== USERS TAB ======== -->
+  <div id="tab-users" class="tab-panel active">
+
+    <div class="stats-bar">
+      <div class="stat-card"><div class="label">Total usuarios</div><div class="value" id="stat-users">—</div></div>
+      <div class="stat-card"><div class="label">Saldo total</div><div class="value" id="stat-balance">—</div></div>
+      <div class="stat-card"><div class="label">Apuestas pendientes</div><div class="value" id="stat-pending">—</div></div>
+      <div class="stat-card"><div class="label">Apuestas totales</div><div class="value" id="stat-bets-total">—</div></div>
+    </div>
+
+    <!-- Add user form -->
+    <div class="card">
+      <h2>➕ Agregar usuario de prueba</h2>
+      <div id="user-alert" class="alert"></div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>ID de cliente *</label>
+          <input type="text" id="new-clientId" placeholder="STR011">
+        </div>
+        <div class="form-group">
+          <label>Nombre *</label>
+          <input type="text" id="new-name" placeholder="Juan Pérez">
+        </div>
+        <div class="form-group">
+          <label>Teléfono *</label>
+          <input type="tel" id="new-phone" placeholder="+5218112345011">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="new-email" placeholder="juan@email.com">
+        </div>
+        <div class="form-group">
+          <label>Saldo inicial (MXN)</label>
+          <input type="number" id="new-balance" placeholder="5000" value="5000">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="addUser()">Agregar usuario</button>
+    </div>
+
+    <!-- Users table -->
+    <div class="card">
+      <h2>👥 Usuarios registrados</h2>
+      <div id="users-container"><div class="loading">Cargando...</div></div>
+    </div>
+  </div>
+
+  <!-- ======== BETS TAB ======== -->
+  <div id="tab-bets" class="tab-panel">
+    <div class="card">
+      <h2>📊 Historial de apuestas</h2>
+      <div class="filter-bar">
+        <select id="bet-user-filter" onchange="loadBets()">
+          <option value="">Todos los usuarios</option>
+        </select>
+        <select id="bet-status-filter" onchange="loadBets()">
+          <option value="">Todos los estados</option>
+          <option value="pending">⏳ Pendiente</option>
+          <option value="won">✅ Ganada</option>
+          <option value="lost">❌ Perdida</option>
+          <option value="cancelled">🚫 Cancelada</option>
+        </select>
+      </div>
+      <div id="bets-container"><div class="loading">Cargando...</div></div>
+    </div>
+  </div>
+
+  <!-- ======== CONFIG TAB ======== -->
+  <div id="tab-config" class="tab-panel">
+    <div class="card">
+      <h2>⚙️ Textos configurables del bot</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:24px">
+        Estos textos aparecen al pie de los mensajes con botones o listas en WhatsApp. Los cambios se aplican inmediatamente al guardar.
+      </p>
+      <div id="config-alert" class="alert"></div>
+
+      <div class="config-section">
+        <h3>Footer de mensajes</h3>
+        <div class="config-row">
+          <label>Menú de deportes</label>
+          <input type="text" id="cfg-footer-sports" placeholder="Momios actualizados cada 2 min">
+        </div>
+        <div class="config-row">
+          <label>Lista de partidos</label>
+          <input type="text" id="cfg-footer-games" placeholder="Apuestas cierran 20 min antes">
+        </div>
+        <div class="config-row">
+          <label>Selección de montos</label>
+          <input type="text" id="cfg-footer-betAmounts" placeholder="Apuesta mínima $50 MXN">
+        </div>
+        <div class="config-row">
+          <label>Historial de apuestas</label>
+          <input type="text" id="cfg-footer-betHistory" placeholder="Últimas 15 apuestas">
+        </div>
+        <div class="config-row">
+          <label>Cancelar apuesta</label>
+          <input type="text" id="cfg-footer-cancelBet" placeholder="Solo antes de 20 min del inicio">
+        </div>
+      </div>
+
+      <div class="config-section">
+        <h3>Texto del botón en listas (abre el selector)</h3>
+        <div class="config-row">
+          <label>Deportes</label>
+          <input type="text" id="cfg-btn-sports" placeholder="Ver deportes">
+        </div>
+        <div class="config-row">
+          <label>Partidos</label>
+          <input type="text" id="cfg-btn-games" placeholder="Ver partidos">
+        </div>
+        <div class="config-row">
+          <label>Montos de apuesta</label>
+          <input type="text" id="cfg-btn-amounts" placeholder="Seleccionar monto">
+        </div>
+        <div class="config-row">
+          <label>Ver historial</label>
+          <input type="text" id="cfg-btn-history" placeholder="Ver apuestas">
+        </div>
+        <div class="config-row">
+          <label>Cancelar apuesta</label>
+          <input type="text" id="cfg-btn-cancel" placeholder="Ver apuestas">
+        </div>
+      </div>
+
+      <button class="btn btn-success" onclick="saveConfig()">💾 Guardar configuración</button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  // ============================================================
+  // AUTH
+  // ============================================================
+  let authHeader = sessionStorage.getItem('adminAuth') || '';
+
+  if (authHeader) {
+    document.getElementById('login-overlay').style.display = 'none';
+    initApp();
+  }
+
+  async function login() {
+    const pass = document.getElementById('login-password').value;
+    const errEl = document.getElementById('login-error');
+    errEl.textContent = '';
+
+    if (!pass) { errEl.textContent = 'Escribe la contraseña'; return; }
+
+    authHeader = 'Basic ' + btoa('admin:' + pass);
+
+    try {
+      await api('GET', '/users');
+      sessionStorage.setItem('adminAuth', authHeader);
+      document.getElementById('login-overlay').style.display = 'none';
+      initApp();
+    } catch (e) {
+      authHeader = '';
+      errEl.textContent = 'Contraseña incorrecta';
+    }
+  }
+
+  function logout() {
+    sessionStorage.removeItem('adminAuth');
+    authHeader = '';
+    document.getElementById('login-overlay').style.display = 'flex';
+  }
+
+  // ============================================================
+  // API HELPER
+  // ============================================================
+  async function api(method, path, body) {
+    const opts = {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Authorization': authHeader }
+    };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch('/admin/api' + path, opts);
+
+    if (res.status === 401) {
+      sessionStorage.removeItem('adminAuth');
+      authHeader = '';
+      document.getElementById('login-overlay').style.display = 'flex';
+      throw new Error('Sesión expirada');
+    }
+
+    const text = await res.text();
+    if (!res.ok) {
+      let msg = text;
+      try { msg = JSON.parse(text).error || text; } catch {}
+      throw new Error(msg);
+    }
+
+    try { return JSON.parse(text); } catch { return text; }
+  }
+
+  // ============================================================
+  // TAB SWITCHING
+  // ============================================================
+  function switchTab(tab, btn) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    btn.classList.add('active');
+    if (tab === 'users') loadUsers();
+    if (tab === 'bets') loadBets();
+    if (tab === 'config') loadConfig();
+  }
+
+  function initApp() {
+    loadUsers();
+  }
+
+  // ============================================================
+  // USERS
+  // ============================================================
+  async function loadUsers() {
+    try {
+      const users = await api('GET', '/users');
+
+      // Stats
+      const totalBalance = users.reduce((s, u) => s + (u.balance || 0), 0);
+      const totalPending = users.reduce((s, u) => s + (u.bets || []).filter(b => b.status === 'pending').length, 0);
+      const totalBets = users.reduce((s, u) => s + (u.bets || []).length, 0);
+
+      document.getElementById('stat-users').textContent = users.length;
+      document.getElementById('stat-balance').textContent = '$' + totalBalance.toLocaleString('es-MX');
+      document.getElementById('stat-pending').textContent = totalPending;
+      document.getElementById('stat-bets-total').textContent = totalBets;
+
+      // Populate bets filter dropdown
+      const filter = document.getElementById('bet-user-filter');
+      const currentVal = filter.value;
+      filter.innerHTML = '<option value="">Todos los usuarios</option>';
+      users.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.phone;
+        opt.textContent = u.name + ' (' + u.clientId + ')';
+        filter.appendChild(opt);
+      });
+      filter.value = currentVal;
+
+      if (users.length === 0) {
+        document.getElementById('users-container').innerHTML = '<div class="empty">No hay usuarios registrados.</div>';
+        return;
+      }
+
+      const rows = users.map(u => {
+        const bets = u.bets || [];
+        const pending = bets.filter(b => b.status === 'pending').length;
+        const won = bets.filter(b => b.status === 'won').length;
+        const lost = bets.filter(b => b.status === 'lost').length;
+        const date = new Date(u.registeredAt).toLocaleDateString('es-MX');
+
+        return `<tr>
+          <td><strong>${esc(u.clientId)}</strong></td>
+          <td>${esc(u.name)}</td>
+          <td style="font-family:monospace;font-size:12px;color:var(--muted)">${esc(u.phone)}</td>
+          <td style="font-size:13px;color:var(--muted)">${esc(u.email || '—')}</td>
+          <td>
+            <div class="editable-balance">
+              <span class="balance-display" title="Click para editar" onclick="startEditBalance(this, '${esc(u.phone)}')">
+                $${(u.balance || 0).toLocaleString('es-MX')}
+              </span>
+              <div class="balance-edit" id="edit-${esc(u.phone)}">
+                <input type="number" value="${u.balance || 0}" style="width:110px">
+                <button class="btn btn-sm btn-success" onclick="saveBalance('${esc(u.phone)}', this)">✓</button>
+                <button class="btn btn-sm btn-outline" onclick="cancelEditBalance('${esc(u.phone)}')">✕</button>
+              </div>
+            </div>
+          </td>
+          <td style="font-size:13px">
+            ${bets.length} total &nbsp;
+            ${pending > 0 ? '<span class="badge badge-pending">'+pending+' pend</span>' : ''}
+            ${won > 0 ? '<span class="badge badge-won">'+won+' gan</span>' : ''}
+            ${lost > 0 ? '<span class="badge badge-lost">'+lost+' perd</span>' : ''}
+          </td>
+          <td style="font-size:12px;color:var(--muted)">${date}</td>
+          <td><button class="btn btn-sm btn-danger" onclick="deleteUser('${esc(u.phone)}', '${esc(u.name)}')">Eliminar</button></td>
+        </tr>`;
+      }).join('');
+
+      document.getElementById('users-container').innerHTML = `
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th>ID</th><th>Nombre</th><th>Teléfono</th><th>Email</th>
+              <th>Saldo</th><th>Apuestas</th><th>Registro</th><th></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    } catch (e) {
+      document.getElementById('users-container').innerHTML = `<div class="alert alert-error" style="display:block">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function startEditBalance(el, phone) {
+    const editId = 'edit-' + phone;
+    el.parentElement.querySelector('.balance-display').style.display = 'none';
+    document.getElementById(editId).style.display = 'flex';
+    document.getElementById(editId).querySelector('input').focus();
+  }
+
+  function cancelEditBalance(phone) {
+    const editId = 'edit-' + phone;
+    document.getElementById(editId).style.display = 'none';
+    document.getElementById(editId).closest('.editable-balance').querySelector('.balance-display').style.display = '';
+  }
+
+  async function saveBalance(phone, btn) {
+    const editEl = document.getElementById('edit-' + phone);
+    const newBalance = parseInt(editEl.querySelector('input').value) || 0;
+    try {
+      await api('PATCH', '/users/' + encodeURIComponent(phone) + '/balance', { balance: newBalance });
+      loadUsers();
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+  }
+
+  async function addUser() {
+    const alertEl = document.getElementById('user-alert');
+    try {
+      const data = {
+        clientId: document.getElementById('new-clientId').value.trim(),
+        name: document.getElementById('new-name').value.trim(),
+        phone: document.getElementById('new-phone').value.trim(),
+        email: document.getElementById('new-email').value.trim(),
+        balance: parseInt(document.getElementById('new-balance').value) || 5000
+      };
+
+      if (!data.clientId || !data.name || !data.phone) {
+        showAlert(alertEl, 'error', 'ID de cliente, nombre y teléfono son requeridos.');
+        return;
+      }
+
+      await api('POST', '/users', data);
+      showAlert(alertEl, 'success', 'Usuario ' + data.name + ' agregado exitosamente.');
+
+      ['clientId', 'name', 'phone', 'email'].forEach(f => document.getElementById('new-' + f).value = '');
+      document.getElementById('new-balance').value = '5000';
+
+      loadUsers();
+    } catch (e) {
+      showAlert(alertEl, 'error', e.message);
+    }
+  }
+
+  async function deleteUser(phone, name) {
+    if (!confirm('¿Eliminar al usuario ' + name + '?\n\nEsta acción eliminará también su historial de apuestas y no se puede deshacer.')) return;
+    try {
+      await api('DELETE', '/users/' + encodeURIComponent(phone));
+      loadUsers();
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+  }
+
+  // ============================================================
+  // BETS
+  // ============================================================
+  async function loadBets() {
+    const userFilter = document.getElementById('bet-user-filter').value;
+    const statusFilter = document.getElementById('bet-status-filter').value;
+
+    document.getElementById('bets-container').innerHTML = '<div class="loading">Cargando...</div>';
+
+    try {
+      const bets = await api('GET', '/bets?user=' + encodeURIComponent(userFilter) + '&status=' + statusFilter);
+
+      if (bets.length === 0) {
+        document.getElementById('bets-container').innerHTML = '<div class="empty">No hay apuestas con estos filtros.</div>';
+        return;
+      }
+
+      const badge = {
+        pending: '<span class="badge badge-pending">⏳ Pendiente</span>',
+        won:     '<span class="badge badge-won">✅ Ganada</span>',
+        lost:    '<span class="badge badge-lost">❌ Perdida</span>',
+        cancelled: '<span class="badge badge-cancelled">🚫 Cancelada</span>'
+      };
+
+      const rows = bets.map(b => {
+        const game = b.game || {};
+        const date = new Date(b.createdAt).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+        return `<tr>
+          <td style="font-family:monospace;font-size:11px;color:var(--muted)">${esc(b.id.substring(0, 18))}…</td>
+          <td><strong>${esc(b.userName)}</strong></td>
+          <td style="font-size:13px">${esc(game.home_team || '?')} <span style="color:var(--muted)">vs</span> ${esc(game.away_team || '?')}</td>
+          <td>${esc(b.team)}</td>
+          <td style="font-weight:600">${b.odds}</td>
+          <td>$${(b.amount || 0).toLocaleString('es-MX')}</td>
+          <td style="color:var(--success)">$${(b.potentialWin || 0).toLocaleString('es-MX')}</td>
+          <td>${badge[b.status] || b.status}</td>
+          <td style="font-size:12px;color:var(--muted)">${date}</td>
+        </tr>`;
+      }).join('');
+
+      document.getElementById('bets-container').innerHTML = `
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th>ID</th><th>Usuario</th><th>Partido</th><th>Apuesta</th>
+              <th>Cuota</th><th>Monto</th><th>Pot. ganancia</th><th>Estado</th><th>Fecha</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    } catch (e) {
+      document.getElementById('bets-container').innerHTML = `<div class="alert alert-error" style="display:block">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  // ============================================================
+  // CONFIG
+  // ============================================================
+  async function loadConfig() {
+    try {
+      const cfg = await api('GET', '/config');
+      const f = cfg.footers || {};
+      const b = cfg.listButtons || {};
+
+      document.getElementById('cfg-footer-sports').value    = f.sports    || '';
+      document.getElementById('cfg-footer-games').value     = f.games     || '';
+      document.getElementById('cfg-footer-betAmounts').value= f.betAmounts|| '';
+      document.getElementById('cfg-footer-betHistory').value= f.betHistory|| '';
+      document.getElementById('cfg-footer-cancelBet').value = f.cancelBet || '';
+
+      document.getElementById('cfg-btn-sports').value  = b.sports  || '';
+      document.getElementById('cfg-btn-games').value   = b.games   || '';
+      document.getElementById('cfg-btn-amounts').value = b.amounts || '';
+      document.getElementById('cfg-btn-history').value = b.history || '';
+      document.getElementById('cfg-btn-cancel').value  = b.cancel  || '';
+    } catch (e) {
+      console.error('Error cargando config:', e);
+    }
+  }
+
+  async function saveConfig() {
+    const alertEl = document.getElementById('config-alert');
+    try {
+      const cfg = {
+        footers: {
+          sports:     document.getElementById('cfg-footer-sports').value,
+          games:      document.getElementById('cfg-footer-games').value,
+          betAmounts: document.getElementById('cfg-footer-betAmounts').value,
+          betHistory: document.getElementById('cfg-footer-betHistory').value,
+          cancelBet:  document.getElementById('cfg-footer-cancelBet').value
+        },
+        listButtons: {
+          sports:  document.getElementById('cfg-btn-sports').value,
+          games:   document.getElementById('cfg-btn-games').value,
+          amounts: document.getElementById('cfg-btn-amounts').value,
+          history: document.getElementById('cfg-btn-history').value,
+          cancel:  document.getElementById('cfg-btn-cancel').value
+        }
+      };
+
+      await api('PUT', '/config', cfg);
+      showAlert(alertEl, 'success', '✅ Configuración guardada y aplicada al bot.');
+    } catch (e) {
+      showAlert(alertEl, 'error', 'Error al guardar: ' + e.message);
+    }
+  }
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
+  function showAlert(el, type, msg) {
+    el.textContent = msg;
+    el.className = 'alert alert-' + type;
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 5000);
+  }
+
+  function esc(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "footers": {
+    "sports": "Momios actualizados cada 2 min",
+    "games": "Apuestas cierran 20 min antes del partido",
+    "betAmounts": "Apuesta mínima $50 MXN",
+    "betHistory": "Últimas 15 apuestas",
+    "cancelBet": "Solo antes de 20 min del inicio"
+  },
+  "listButtons": {
+    "sports": "Ver deportes",
+    "games": "Ver partidos",
+    "amounts": "Seleccionar monto",
+    "history": "Ver apuestas",
+    "cancel": "Ver apuestas"
+  }
+}
