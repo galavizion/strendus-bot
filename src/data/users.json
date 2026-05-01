@@ -1,6 +1,15 @@
 {
   "users": [
     {
+      "clientId": "STR011",
+      "phone": "+5218181817006",
+      "name": "Rene Galaviz",
+      "email": "rene.galaviz@gmail.com",
+      "balance": 15000,
+      "registeredAt": "2026-01-05T00:00:00Z",
+      "bets": []
+    },
+    {
       "clientId": "STR001",
       "phone": "+5218112345001",
       "name": "Carlos Martínez",

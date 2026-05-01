@@ -32,11 +32,16 @@ class StrendusAPIService {
     }
   }
 
+  normalizePhone(phone) {
+    return String(phone || '').replace(/^\+/, '');
+  }
+
   /**
    * Verificar usuario por número de teléfono
    */
   verifyUser(phone) {
-    const user = this.usersData.users.find(u => u.phone === phone);
+    const normalized = this.normalizePhone(phone);
+    const user = this.usersData.users.find(u => this.normalizePhone(u.phone) === normalized);
     
     if (!user) {
       return {
@@ -60,20 +65,23 @@ class StrendusAPIService {
    * Verificar usuario por número de cliente
    */
   verifyByClientId(clientId, phone) {
-    const user = this.usersData.users.find(u => u.clientId === clientId);
-    
+    const input = clientId.trim().toLowerCase();
+    const user = this.usersData.users.find(
+      u => u.clientId === clientId.trim() || u.email.toLowerCase() === input
+    );
+
     if (!user) {
       return {
         success: false,
-        message: 'Número de cliente no encontrado'
+        message: 'Número de cliente o correo no encontrado'
       };
     }
 
-    if (user.phone !== phone) {
+    if (this.normalizePhone(user.phone) !== this.normalizePhone(phone)) {
       return {
         success: false,
         message: `El número de cliente ${clientId} está registrado con otro número de teléfono.`,
-        registeredPhone: user.phone.slice(-4) // Últimos 4 dígitos
+        registeredPhone: user.phone.slice(-4)
       };
     }
 
@@ -92,7 +100,7 @@ class StrendusAPIService {
    * Obtener saldo del usuario
    */
   getBalance(phone) {
-    const user = this.usersData.users.find(u => u.phone === phone);
+    const user = this.usersData.users.find(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
     return user ? user.balance : 0;
   }
 
@@ -100,7 +108,7 @@ class StrendusAPIService {
    * Actualizar saldo del usuario
    */
   updateBalance(phone, amount) {
-    const userIndex = this.usersData.users.findIndex(u => u.phone === phone);
+    const userIndex = this.usersData.users.findIndex(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
     
     if (userIndex === -1) return false;
 
@@ -114,7 +122,7 @@ class StrendusAPIService {
    * Crear una apuesta
    */
   createBet(phone, betData) {
-    const userIndex = this.usersData.users.findIndex(u => u.phone === phone);
+    const userIndex = this.usersData.users.findIndex(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
     
     if (userIndex === -1) {
       return { success: false, message: 'Usuario no encontrado' };
@@ -172,7 +180,7 @@ class StrendusAPIService {
    * Obtener historial de apuestas
    */
   getBetHistory(phone, limit = 15) {
-    const user = this.usersData.users.find(u => u.phone === phone);
+    const user = this.usersData.users.find(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
     
     if (!user || !user.bets) {
       return [];
@@ -185,7 +193,7 @@ class StrendusAPIService {
    * Obtener una apuesta específica
    */
   getBet(phone, betId) {
-    const user = this.usersData.users.find(u => u.phone === phone);
+    const user = this.usersData.users.find(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
     
     if (!user || !user.bets) {
       return null;
@@ -198,7 +206,7 @@ class StrendusAPIService {
    * Cancelar una apuesta
    */
   cancelBet(phone, betId) {
-    const userIndex = this.usersData.users.findIndex(u => u.phone === phone);
+    const userIndex = this.usersData.users.findIndex(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
     
     if (userIndex === -1) {
       return { success: false, message: 'Usuario no encontrado' };
@@ -237,7 +245,7 @@ class StrendusAPIService {
    * Actualizar resultado de una apuesta
    */
   updateBetResult(phone, betId, won, result) {
-    const userIndex = this.usersData.users.findIndex(u => u.phone === phone);
+    const userIndex = this.usersData.users.findIndex(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
     
     if (userIndex === -1) return false;
 
@@ -271,7 +279,7 @@ class StrendusAPIService {
    * Obtener apuestas pendientes del usuario
    */
   getPendingBets(phone) {
-    const user = this.usersData.users.find(u => u.phone === phone);
+    const user = this.usersData.users.find(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
     
     if (!user || !user.bets) {
       return [];
@@ -307,7 +315,7 @@ class StrendusAPIService {
    * Obtener información completa del usuario
    */
   getUserInfo(phone) {
-    const user = this.usersData.users.find(u => u.phone === phone);
+    const user = this.usersData.users.find(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
     
     if (!user) return null;
 
