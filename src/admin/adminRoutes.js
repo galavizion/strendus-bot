@@ -33,20 +33,17 @@ router.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// All API endpoints require auth
-router.use('/api', adminAuth);
-
 // --- Users ---
-router.get('/api/users', (req, res) => {
+router.get('/api/users', adminAuth, (req, res) => {
   res.json(strendusAPI.usersData.users);
 });
 
-router.post('/api/users', (req, res) => {
-  const { clientId, name, phone, email, balance } = req.body;
+router.post('/api/users', adminAuth, (req, res) => {
+  const { clientId, name, phone, email, balance } = req.body || {};
 
-  if (!clientId || !name || !phone) {
-    return res.status(400).json({ error: 'clientId, name y phone son requeridos' });
-  }
+  if (!clientId) return res.status(400).json({ error: 'El ID de cliente es requerido' });
+  if (!name)     return res.status(400).json({ error: 'El nombre es requerido' });
+  if (!phone)    return res.status(400).json({ error: 'El teléfono es requerido' });
 
   const existing = strendusAPI.usersData.users.find(
     u => u.phone === phone || u.clientId === clientId
@@ -69,12 +66,13 @@ router.post('/api/users', (req, res) => {
   strendusAPI.usersData.users.push(newUser);
   strendusAPI.saveUsers();
 
+  console.log(`✅ Admin: usuario ${name} (${clientId}) agregado`);
   res.status(201).json(newUser);
 });
 
-router.patch('/api/users/:phone/balance', (req, res) => {
+router.patch('/api/users/:phone/balance', adminAuth, (req, res) => {
   const phone = decodeURIComponent(req.params.phone);
-  const { balance } = req.body;
+  const { balance } = req.body || {};
 
   const idx = strendusAPI.usersData.users.findIndex(u => u.phone === phone);
   if (idx === -1) return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -85,7 +83,7 @@ router.patch('/api/users/:phone/balance', (req, res) => {
   res.json({ success: true, balance: strendusAPI.usersData.users[idx].balance });
 });
 
-router.delete('/api/users/:phone', (req, res) => {
+router.delete('/api/users/:phone', adminAuth, (req, res) => {
   const phone = decodeURIComponent(req.params.phone);
   const idx = strendusAPI.usersData.users.findIndex(u => u.phone === phone);
 
@@ -98,7 +96,7 @@ router.delete('/api/users/:phone', (req, res) => {
 });
 
 // --- Bets ---
-router.get('/api/bets', (req, res) => {
+router.get('/api/bets', adminAuth, (req, res) => {
   const { user, status } = req.query;
   let allBets = [];
 
@@ -119,7 +117,7 @@ router.get('/api/bets', (req, res) => {
 });
 
 // --- Config ---
-router.get('/api/config', (req, res) => {
+router.get('/api/config', adminAuth, (req, res) => {
   try {
     const data = fs.readFileSync(CONFIG_PATH, 'utf8');
     res.json(JSON.parse(data));
@@ -128,7 +126,7 @@ router.get('/api/config', (req, res) => {
   }
 });
 
-router.put('/api/config', (req, res) => {
+router.put('/api/config', adminAuth, (req, res) => {
   try {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(req.body, null, 2));
     whatsappService.loadConfig();

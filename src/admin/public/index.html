@@ -395,6 +395,7 @@
   // ============================================================
   // USERS
   // ============================================================
+
   async function loadUsers() {
     try {
       const users = await api('GET', '/users');
@@ -503,23 +504,22 @@
   async function addUser() {
     const alertEl = document.getElementById('user-alert');
     try {
-      const data = {
-        clientId: document.getElementById('new-clientId').value.trim(),
-        name: document.getElementById('new-name').value.trim(),
-        phone: document.getElementById('new-phone').value.trim(),
-        email: document.getElementById('new-email').value.trim(),
-        balance: parseInt(document.getElementById('new-balance').value) || 5000
-      };
+      const clientId = document.getElementById('new-clientId').value.trim();
+      const name     = document.getElementById('new-name').value.trim();
+      const phone    = document.getElementById('new-phone').value.trim();
+      const email    = document.getElementById('new-email').value.trim();
+      const balance  = parseInt(document.getElementById('new-balance').value) || 5000;
 
-      if (!data.clientId || !data.name || !data.phone) {
-        showAlert(alertEl, 'error', 'ID de cliente, nombre y teléfono son requeridos.');
-        return;
-      }
+      if (!clientId) { showAlert(alertEl, 'error', 'Falta el ID de cliente.'); return; }
+      if (!name)     { showAlert(alertEl, 'error', 'Falta el nombre.');         return; }
+      if (!phone)    { showAlert(alertEl, 'error', 'Falta el teléfono.');        return; }
+
+      const data = { clientId, name, phone, email, balance };
 
       await api('POST', '/users', data);
-      showAlert(alertEl, 'success', 'Usuario ' + data.name + ' agregado exitosamente.');
+      showAlert(alertEl, 'success', '✅ Usuario ' + name + ' agregado exitosamente.');
 
-      ['clientId', 'name', 'phone', 'email'].forEach(f => document.getElementById('new-' + f).value = '');
+      ['clientId', 'name', 'phone', 'email'].forEach(f => { document.getElementById('new-' + f).value = ''; });
       document.getElementById('new-balance').value = '5000';
 
       loadUsers();
@@ -648,11 +648,13 @@
   // ============================================================
   // HELPERS
   // ============================================================
+  const _alertTimers = {};
   function showAlert(el, type, msg) {
+    clearTimeout(_alertTimers[el.id]);
     el.textContent = msg;
     el.className = 'alert alert-' + type;
     el.style.display = 'block';
-    setTimeout(() => { el.style.display = 'none'; }, 5000);
+    _alertTimers[el.id] = setTimeout(() => { el.style.display = 'none'; }, 6000);
   }
 
   function esc(str) {
