@@ -608,13 +608,16 @@
         if (events.length === 0) {
           tableHtml = '<p style="color:var(--muted);padding:8px 0">Sin eventos próximos para este deporte.</p>';
         } else {
-          const hasOdds = events.some(g => g.bookmakers?.length > 0);
+          const sportHasDraw = key === 'soccer_mexico_ligamx';
           const rows = events.map(g => {
             const bookmaker = g.bookmakers?.[0];
             const outcomes = bookmaker?.markets?.[0]?.outcomes || [];
-            const homeOdds = outcomes.find(o => o.name === g.home_team)?.price ?? '—';
-            const awayOdds = outcomes.find(o => o.name === g.away_team)?.price ?? '—';
+            const homeOdds = outcomes.find(o => o.name === g.home_team)?.price;
+            const awayOdds = outcomes.find(o => o.name === g.away_team)?.price;
             const drawOdds = outcomes.find(o => o.name === 'Draw')?.price;
+            const fmtOdds = v => v != null
+              ? `<span style="font-weight:700;color:var(--primary)">${v}</span>`
+              : `<span style="color:#cbd5e1">—</span>`;
             const gameTime = new Date(g.commence_time);
             const minutesUntil = Math.round((gameTime - now) / 60000);
             const dateStr = gameTime.toLocaleString('es-MX', {
@@ -625,27 +628,24 @@
               : minutesUntil > 0
                 ? `<span class="badge badge-pending">Cierra pronto</span>`
                 : `<span class="badge badge-cancelled">Iniciado</span>`;
-            const oddsCell = hasOdds
-              ? `<td style="font-weight:600;color:var(--primary)">${homeOdds}</td>
-                 <td style="color:var(--muted)">${drawOdds ?? '—'}</td>
-                 <td style="font-weight:600;color:var(--primary)">${awayOdds}</td>`
-              : '';
+            const drawCell = sportHasDraw ? `<td style="text-align:center">${fmtOdds(drawOdds)}</td>` : '';
             return `<tr>
               <td><strong>${esc(g.home_team)}</strong></td>
               <td>${esc(g.away_team)}</td>
-              ${oddsCell}
+              <td style="text-align:center">${fmtOdds(homeOdds)}</td>
+              ${drawCell}
+              <td style="text-align:center">${fmtOdds(awayOdds)}</td>
               <td style="font-size:12px;color:var(--muted)">${dateStr}</td>
               <td>${statusBadge}</td>
             </tr>`;
           }).join('');
 
-          const oddsHeaders = hasOdds
-            ? '<th>Cuota local</th><th>Empate</th><th>Cuota visitante</th>'
-            : '';
-
+          const drawHeader = sportHasDraw ? '<th style="text-align:center">Empate</th>' : '';
           tableHtml = `<div style="overflow-x:auto"><table>
             <thead><tr>
-              <th>Local</th><th>Visitante</th>${oddsHeaders}
+              <th>Local</th><th>Visitante</th>
+              <th style="text-align:center">Cuota local</th>${drawHeader}
+              <th style="text-align:center">Cuota visitante</th>
               <th>Fecha (CDMX)</th><th>Estado</th>
             </tr></thead>
             <tbody>${rows}</tbody>

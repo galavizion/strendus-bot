@@ -112,28 +112,28 @@ router.get('/api/events', adminAuth, async (req, res) => {
     return res.json({ events: [], total: 0, oddsCacheCount: 0, error: 'ODDS_API_KEY no está configurada en Railway.' });
   }
   try {
-    const events = await oddsService.fetchAllEvents();
-    const oddsGames = oddsService.cache.games;
+    // Fetch events (free, no quota) and odds cache in parallel
+    const [events, oddsGames] = await Promise.all([
+      oddsService.fetchAllEvents(),
+      Promise.resolve(oddsService.cache.games)
+    ]);
 
-    // Build ID map for O(1) lookup
-    const oddsById = {};
-    oddsGames.forEach(g => { oddsById[g.id] = g; });
+    // Build lookups
+    const eventsById = {};
+    events.forEach(e => { eventsById[e.id] = e; });
+    const oddsIds = new Set(oddsGames.map(g => g.id));
 
-    // Merge: prefer cached game (has bookmakers/odds) when IDs match
-    const seenIds = new Set();
-    const enriched = events.map(ev => {
-      seenIds.add(ev.id);
-      return oddsById[ev.id] || ev;
-    });
+    // Primary: cached odds games (have bookmakers). Augment with fresh event data if available.
+    const result = oddsGames.map(g => ({ ...(eventsById[g.id] || {}), ...g }));
 
-    // Include cached odds games not returned by events endpoint
-    oddsGames.forEach(g => {
-      if (!seenIds.has(g.id)) enriched.push(g);
-    });
+    // Secondary: events that have no cached odds yet (no bookmakers)
+    events.forEach(e => { if (!oddsIds.has(e.id)) result.push(e); });
+
+    result.sort((a, b) => new Date(a.commence_time) - new Date(b.commence_time));
 
     res.json({
-      events: enriched,
-      total: enriched.length,
+      events: result,
+      total: result.length,
       oddsLastUpdate: oddsService.cache.lastUpdate,
       oddsCacheCount: oddsGames.length
     });
