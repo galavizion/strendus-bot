@@ -106,11 +106,20 @@ router.get('/api/games', adminAuth, (req, res) => {
 });
 
 router.post('/api/refresh-odds', adminAuth, async (req, res) => {
+  const apiKey = process.env.ODDS_API_KEY;
+  if (!apiKey) {
+    return res.status(200).json({ success: false, error: 'ODDS_API_KEY no está configurada en las variables de Railway.' });
+  }
+
   try {
     const games = await oddsService.fetchAllOdds();
-    res.json({ success: true, gamesUpdated: games.length });
+    res.json({
+      success: true,
+      gamesUpdated: games.length,
+      keyConfigured: true
+    });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(200).json({ success: false, error: e.message });
   }
 });
 

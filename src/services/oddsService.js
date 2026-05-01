@@ -72,10 +72,14 @@ class OddsService {
         sport_title: this.getSportTitle(sportKey)
       }));
     } catch (error) {
-      if (error.response?.status === 422 || error.response?.status === 401) {
-        console.error(`❌ Odds API: quota agotada o API key inválida. Respuesta: ${JSON.stringify(error.response?.data)}`);
+      const status = error.response?.status;
+      const msg = error.response?.data?.message || error.message;
+      if (status === 422) {
+        console.error(`❌ Odds API QUOTA AGOTADA (422): ${msg}`);
+      } else if (status === 401) {
+        console.error(`❌ Odds API KEY INVÁLIDA (401): ${msg}`);
       } else {
-        console.error(`❌ Error obteniendo ${sportKey}:`, error.message);
+        console.error(`❌ Error obteniendo ${sportKey} (${status || 'sin conexión'}): ${msg}`);
       }
       return [];
     }

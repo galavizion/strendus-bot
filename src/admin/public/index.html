@@ -654,13 +654,20 @@
     const original = btn.textContent;
     btn.textContent = '⏳ Actualizando...';
     btn.disabled = true;
+    const statusEl = document.getElementById('api-status');
     try {
       const result = await api('POST', '/refresh-odds', {});
-      btn.textContent = `✅ ${result.gamesUpdated} partidos`;
-      setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 3000);
-      loadGames();
+      if (!result.success) {
+        statusEl.innerHTML = `<span style="color:var(--error)">❌ ${esc(result.error)}</span>`;
+        btn.textContent = '❌ Error';
+      } else {
+        btn.textContent = `✅ ${result.gamesUpdated} partidos`;
+        loadGames();
+      }
+      setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 4000);
     } catch (e) {
-      btn.textContent = '❌ ' + e.message.substring(0, 30);
+      statusEl.innerHTML = `<span style="color:var(--error)">❌ ${esc(e.message)}</span>`;
+      btn.textContent = '❌ Error';
       setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 4000);
     }
   }
