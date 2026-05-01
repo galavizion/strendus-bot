@@ -201,7 +201,7 @@ class BotController {
     const sport = sportMap[sportId];
     if (!sport) return;
 
-    const games = oddsService.getAvailableGames(sport.key, 3);
+    const games = await oddsService.getOrFetchOdds(sport.key, 3);
 
     if (games.length === 0) {
       return whatsappService.sendText(

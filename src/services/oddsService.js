@@ -12,12 +12,15 @@ const SPORTS = {
   LIGA_MX: 'soccer_mexico_ligamx'
 };
 
+const ODDS_TTL = 4 * 60 * 60 * 1000; // 4 hours per sport
+
 class OddsService {
   constructor() {
     this.cache = {
       games: [],
       lastUpdate: null
     };
+    this.oddsCache = {}; // per-sport: { sportKey: { lastUpdate: Date } }
   }
 
   /**
@@ -83,6 +86,61 @@ class OddsService {
       }
       return [];
     }
+  }
+
+  /**
+   * Obtener eventos de un deporte (endpoint gratuito — sin costo de cuota)
+   */
+  async fetchSportEvents(sportKey) {
+    try {
+      const response = await axios.get(`${ODDS_BASE_URL}/sports/${sportKey}/events/`, {
+        params: { apiKey: ODDS_API_KEY },
+        timeout: 10000
+      });
+      return response.data.map(event => ({
+        ...event,
+        sport_key: sportKey,
+        sport_title: this.getSportTitle(sportKey)
+      }));
+    } catch (error) {
+      const status = error.response?.status;
+      const msg = error.response?.data?.message || error.message;
+      console.error(`❌ Error obteniendo eventos ${sportKey} (${status || 'sin conexión'}): ${msg}`);
+      return [];
+    }
+  }
+
+  /**
+   * Obtener eventos de todos los deportes (gratis, sin quota)
+   */
+  async fetchAllEvents() {
+    const promises = Object.values(SPORTS).map(sport => this.fetchSportEvents(sport));
+    const results = await Promise.all(promises);
+    return results.flat();
+  }
+
+  /**
+   * Obtener momios on-demand con caché por deporte (TTL 4 horas)
+   * Llama a la API solo cuando el caché expiró o nunca se cargó
+   */
+  async getOrFetchOdds(sportKey, limit = 3) {
+    const now = new Date();
+    const cached = this.oddsCache[sportKey];
+
+    if (cached && cached.lastUpdate && (now - cached.lastUpdate) < ODDS_TTL) {
+      return this.getAvailableGames(sportKey, limit);
+    }
+
+    console.log(`🔄 Obteniendo momios on-demand: ${sportKey}`);
+    const games = await this.fetchSportOdds(sportKey);
+
+    this.cache.games = this.cache.games
+      .filter(g => g.sport_key !== sportKey)
+      .concat(games);
+    this.cache.lastUpdate = now;
+    this.oddsCache[sportKey] = { lastUpdate: now };
+
+    return this.getAvailableGames(sportKey, limit);
   }
 
   /**

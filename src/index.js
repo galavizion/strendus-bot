@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const cron = require('node-cron');
 
 // Servicios
 const oddsService = require('./services/oddsService');
@@ -223,15 +222,8 @@ async function startServer() {
       console.warn(`⚠️  Variables de entorno faltantes: ${missing.join(', ')}`);
     }
 
-    // Actualizar momios inicialmente
-    console.log('🔄 Cargando momios iniciales...');
-    await oddsService.fetchAllOdds();
-
-    // Actualizar momios cada 6 horas (free tier: 500 req/mes = ~5/día × 3 sports)
-    cron.schedule('0 */6 * * *', async () => {
-      console.log('🔄 Actualizando momios automáticamente...');
-      await oddsService.fetchAllOdds();
-    });
+    // Los momios se obtienen on-demand por deporte (caché 4 horas por sport)
+    // No hay polling automático — se usa la cuota solo cuando el usuario pide partidos
 
     // Iniciar servicio de resultados (cada 5 minutos)
     resultsService.start();
@@ -248,7 +240,7 @@ async function startServer() {
 ║  Health: /health ${' '.repeat(25)} ║
 ║  Stats: /stats ${' '.repeat(27)} ║
 ╠════════════════════════════════════════════╣
-║  ✅ Momios actualizándose cada 2 min      ║
+║  ✅ Momios: on-demand, caché 4 horas      ║
 ║  ✅ Resultados procesándose cada 5 min    ║
 ║  ✅ WhatsApp webhook configurado          ║
 ╚════════════════════════════════════════════╝

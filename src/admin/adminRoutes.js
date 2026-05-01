@@ -105,6 +105,29 @@ router.get('/api/games', adminAuth, (req, res) => {
   });
 });
 
+// --- Events (endpoint gratuito — sin costo de cuota) ---
+router.get('/api/events', adminAuth, async (req, res) => {
+  const apiKey = process.env.ODDS_API_KEY;
+  if (!apiKey) {
+    return res.json({ events: [], total: 0, error: 'ODDS_API_KEY no está configurada en Railway.' });
+  }
+  try {
+    const events = await oddsService.fetchAllEvents();
+    // Enriquecer con momios del caché si están disponibles
+    const enriched = events.map(ev => {
+      const cached = oddsService.cache.games.find(g => g.id === ev.id);
+      return cached || ev;
+    });
+    res.json({
+      events: enriched,
+      total: enriched.length,
+      oddsLastUpdate: oddsService.cache.lastUpdate
+    });
+  } catch (e) {
+    res.json({ events: [], total: 0, error: e.message });
+  }
+});
+
 router.post('/api/refresh-odds', adminAuth, async (req, res) => {
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {

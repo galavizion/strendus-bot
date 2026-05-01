@@ -578,29 +578,34 @@
   };
 
   async function loadGames() {
-    document.getElementById('api-status').textContent = 'Cargando...';
+    document.getElementById('api-status').textContent = 'Cargando eventos (gratis, sin cuota)...';
     document.getElementById('games-by-sport').innerHTML = '';
     try {
-      const data = await api('GET', '/games');
+      const data = await api('GET', '/events');
 
-      const lastUpdate = data.lastUpdate
-        ? new Date(data.lastUpdate).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })
-        : 'Nunca';
+      if (data.error) {
+        document.getElementById('api-status').innerHTML =
+          `<span style="color:var(--error)">⚠️ ${esc(data.error)}</span>`;
+      }
+
+      const oddsNote = data.oddsLastUpdate
+        ? `Momios en caché: ${new Date(data.oddsLastUpdate).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}`
+        : 'Momios: no cargados — usa "Actualizar momios ahora" para verlos';
 
       document.getElementById('api-status').innerHTML =
-        `<strong>Última actualización:</strong> ${lastUpdate} &nbsp;•&nbsp; ` +
-        `<strong>Total en caché:</strong> ${data.total} partidos`;
+        `<strong>${data.total} eventos próximos</strong> &nbsp;•&nbsp; ${oddsNote}`;
 
       let html = '';
       Object.entries(SPORTS_META).forEach(([key, sport]) => {
-        const games = data.games.filter(g => g.sport_key === key);
+        const events = (data.events || []).filter(g => g.sport_key === key);
         const now = new Date();
 
         let tableHtml = '';
-        if (games.length === 0) {
-          tableHtml = '<p style="color:var(--muted);padding:8px 0">Sin partidos en la API para este deporte.</p>';
+        if (events.length === 0) {
+          tableHtml = '<p style="color:var(--muted);padding:8px 0">Sin eventos próximos para este deporte.</p>';
         } else {
-          const rows = games.map(g => {
+          const hasOdds = events.some(g => g.bookmakers?.length > 0);
+          const rows = events.map(g => {
             const bookmaker = g.bookmakers?.[0];
             const outcomes = bookmaker?.markets?.[0]?.outcomes || [];
             const homeOdds = outcomes.find(o => o.name === g.home_team)?.price ?? '—';
@@ -616,35 +621,42 @@
               : minutesUntil > 0
                 ? `<span class="badge badge-pending">Cierra pronto</span>`
                 : `<span class="badge badge-cancelled">Iniciado</span>`;
+            const oddsCell = hasOdds
+              ? `<td style="font-weight:600;color:var(--primary)">${homeOdds}</td>
+                 <td style="color:var(--muted)">${drawOdds ?? '—'}</td>
+                 <td style="font-weight:600;color:var(--primary)">${awayOdds}</td>`
+              : '';
             return `<tr>
               <td><strong>${esc(g.home_team)}</strong></td>
               <td>${esc(g.away_team)}</td>
-              <td style="font-weight:600;color:var(--primary)">${homeOdds}</td>
-              <td style="color:var(--muted)">${drawOdds ?? '—'}</td>
-              <td style="font-weight:600;color:var(--primary)">${awayOdds}</td>
+              ${oddsCell}
               <td style="font-size:12px;color:var(--muted)">${dateStr}</td>
               <td>${statusBadge}</td>
             </tr>`;
           }).join('');
 
+          const oddsHeaders = hasOdds
+            ? '<th>Cuota local</th><th>Empate</th><th>Cuota visitante</th>'
+            : '';
+
           tableHtml = `<div style="overflow-x:auto"><table>
             <thead><tr>
-              <th>Local</th><th>Visitante</th><th>Cuota local</th>
-              <th>Empate</th><th>Cuota visitante</th><th>Fecha (CDMX)</th><th>Estado</th>
+              <th>Local</th><th>Visitante</th>${oddsHeaders}
+              <th>Fecha (CDMX)</th><th>Estado</th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table></div>`;
         }
 
         html += `<div class="card">
-          <h2>${sport.emoji} ${sport.name} — ${games.length} partido${games.length !== 1 ? 's' : ''}</h2>
+          <h2>${sport.emoji} ${sport.name} — ${events.length} evento${events.length !== 1 ? 's' : ''}</h2>
           ${tableHtml}
         </div>`;
       });
 
       document.getElementById('games-by-sport').innerHTML = html;
     } catch (e) {
-      document.getElementById('api-status').textContent = 'Error cargando juegos.';
+      document.getElementById('api-status').textContent = 'Error cargando eventos.';
       document.getElementById('games-by-sport').innerHTML =
         `<div class="alert alert-error" style="display:block">Error: ${esc(e.message)}</div>`;
     }
@@ -652,7 +664,7 @@
 
   async function refreshOdds(btn) {
     const original = btn.textContent;
-    btn.textContent = '⏳ Actualizando...';
+    btn.textContent = '⏳ Actualizando momios...';
     btn.disabled = true;
     const statusEl = document.getElementById('api-status');
     try {
@@ -660,15 +672,17 @@
       if (!result.success) {
         statusEl.innerHTML = `<span style="color:var(--error)">❌ ${esc(result.error)}</span>`;
         btn.textContent = '❌ Error';
+        setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 5000);
       } else {
-        btn.textContent = `✅ ${result.gamesUpdated} partidos`;
-        loadGames();
+        btn.textContent = `✅ ${result.gamesUpdated} momios cargados`;
+        // Reload games tab — odds now in cache so they'll appear in the table
+        await loadGames();
+        setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 4000);
       }
-      setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 4000);
     } catch (e) {
       statusEl.innerHTML = `<span style="color:var(--error)">❌ ${esc(e.message)}</span>`;
       btn.textContent = '❌ Error';
-      setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 4000);
+      setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 5000);
     }
   }
 
