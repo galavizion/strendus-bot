@@ -1,6 +1,7 @@
 const whatsappService = require('../services/whatsappService');
 const strendusAPI = require('../services/strendusAPI');
 const oddsService = require('../services/oddsService');
+const aiService = require('../services/aiService');
 
 // Almacenamiento temporal de estados de conversación (en producción usar Redis)
 const userStates = new Map();
@@ -696,35 +697,61 @@ class BotController {
    * Retorna null si no hay coincidencia (para que provideGuidance tome el control).
    */
   async tryGameSearch(from, text, lowerText) {
-    // 1. Búsqueda por equipo o deporte (async — fetches on-demand if cache stale)
+    // 1. Keyword matching rápido (sin costo de API)
     const games = await oddsService.searchGames(lowerText);
     if (games.length > 0) return this.showSearchResults(from, games);
 
-    // 2. Pregunta de recomendación: "en qué puedo apostar", "tengo X pesos", etc.
+    // 2. Recomendación explícita por keywords
     const isReco =
       /\d+\s*(pesos?|mxn)/i.test(text) && lowerText.includes('apostar') ||
       ['en que puedo apostar', 'en que apostar', 'que puedo apostar', 'donde apuesto',
        'que hay para apostar', 'hay algo para apostar', 'recomienda', 'recomiendame']
         .some(p => lowerText.includes(p));
 
-    if (isReco) {
-      const [nba, mlb, liga] = await Promise.all([
-        oddsService.getOrFetchOdds('basketball_nba', 2),
-        oddsService.getOrFetchOdds('baseball_mlb', 2),
-        oddsService.getOrFetchOdds('soccer_mexico_ligamx', 2)
-      ]);
-      const all = [...nba, ...mlb, ...liga].filter(g => g.bookmakers?.length > 0);
+    if (isReco) return this.showRecommendations(from);
 
-      if (all.length === 0) {
-        return whatsappService.sendText(
-          from,
-          '⏰ No hay partidos con momios disponibles en este momento.\n\nEscribe *momios* para ver todas las opciones.'
-        );
+    // 3. IA como fallback: entiende lenguaje libre que no matcheó keywords
+    const intent = await aiService.parseIntent(text);
+    if (!intent || intent.intent === 'none') return null;
+
+    if (intent.intent === 'recommend') return this.showRecommendations(from);
+
+    if (intent.intent === 'search_game') {
+      // Si mencionó equipo específico, busca por ese equipo
+      if (intent.team) {
+        const byTeam = await oddsService.searchGames(intent.team);
+        if (byTeam.length > 0) return this.showSearchResults(from, byTeam);
       }
-      return this.showSearchResults(from, all);
+      // Si solo mencionó deporte, muestra los juegos de ese deporte
+      if (intent.sport) {
+        const bySport = await oddsService.getOrFetchOdds(intent.sport, 5);
+        if (bySport.length > 0) return this.showSearchResults(from, bySport);
+      }
+      // Sin juegos disponibles
+      return whatsappService.sendText(
+        from,
+        '⏰ No encontré partidos disponibles para eso.\n\nEscribe *momios* para ver todos los deportes.'
+      );
     }
 
     return null;
+  }
+
+  async showRecommendations(from) {
+    const [nba, mlb, liga] = await Promise.all([
+      oddsService.getOrFetchOdds('basketball_nba', 2),
+      oddsService.getOrFetchOdds('baseball_mlb', 2),
+      oddsService.getOrFetchOdds('soccer_mexico_ligamx', 2)
+    ]);
+    const all = [...nba, ...mlb, ...liga].filter(g => g.bookmakers?.length > 0);
+
+    if (all.length === 0) {
+      return whatsappService.sendText(
+        from,
+        '⏰ No hay partidos con momios disponibles en este momento.\n\nEscribe *momios* para ver todas las opciones.'
+      );
+    }
+    return this.showSearchResults(from, all);
   }
 
   /**
