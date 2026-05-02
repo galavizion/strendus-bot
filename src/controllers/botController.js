@@ -105,6 +105,9 @@ class BotController {
     // Selección de deporte
     if (responseId.startsWith('sport_')) return this.showGamesList(from, responseId);
 
+    // Ver otros partidos (desde confirmación)
+    if (responseId === 'show_sports') return this.showSportsList(from);
+
     // Selección de partido
     if (responseId.startsWith('game_')) return this.showGameBetting(from, responseId);
 
@@ -693,8 +696,8 @@ class BotController {
    * Retorna null si no hay coincidencia (para que provideGuidance tome el control).
    */
   async tryGameSearch(from, text, lowerText) {
-    // 1. Búsqueda por equipo o deporte
-    const games = oddsService.searchGames(lowerText);
+    // 1. Búsqueda por equipo o deporte (async — fetches on-demand if cache stale)
+    const games = await oddsService.searchGames(lowerText);
     if (games.length > 0) return this.showSearchResults(from, games);
 
     // 2. Pregunta de recomendación: "en qué puedo apostar", "tengo X pesos", etc.
@@ -705,11 +708,12 @@ class BotController {
         .some(p => lowerText.includes(p));
 
     if (isReco) {
-      const all = [
-        ...oddsService.getAvailableGames('basketball_nba', 2),
-        ...oddsService.getAvailableGames('baseball_mlb', 2),
-        ...oddsService.getAvailableGames('soccer_mexico_ligamx', 2)
-      ].filter(g => g.bookmakers?.length > 0);
+      const [nba, mlb, liga] = await Promise.all([
+        oddsService.getOrFetchOdds('basketball_nba', 2),
+        oddsService.getOrFetchOdds('baseball_mlb', 2),
+        oddsService.getOrFetchOdds('soccer_mexico_ligamx', 2)
+      ]);
+      const all = [...nba, ...mlb, ...liga].filter(g => g.bookmakers?.length > 0);
 
       if (all.length === 0) {
         return whatsappService.sendText(
@@ -724,11 +728,11 @@ class BotController {
   }
 
   /**
-   * Muestra los resultados de búsqueda como lista o va directo si hay uno solo.
+   * Muestra los resultados de búsqueda. Un resultado → confirmación. Varios → lista.
    */
   async showSearchResults(from, games) {
     if (games.length === 1) {
-      return this.showGameBetting(from, `game_${games[0].id}`);
+      return this.showGameConfirmation(from, games[0]);
     }
 
     const rows = games.slice(0, 10).map(game => {
@@ -747,6 +751,44 @@ class BotController {
       `Encontré ${games.length} partido${games.length > 1 ? 's' : ''} disponible${games.length > 1 ? 's' : ''}:\n\n¿En cuál quieres apostar?`,
       whatsappService.getListButton('games'),
       [{ title: 'Partidos', rows }]
+    );
+  }
+
+  /**
+   * Muestra el partido encontrado con selección de equipo directa + opción de buscar otro.
+   * Usa lista para poder incluir siempre "Ver otros" sin importar cuántos equipos haya.
+   */
+  async showGameConfirmation(from, game) {
+    const emoji = oddsService.getSportEmoji(game.sport_key);
+    const date = oddsService.formatGameDate(game.commence_time);
+    const market = game.bookmakers?.[0]?.markets?.find(m => m.key === 'h2h');
+
+    const body =
+      `${emoji} *${game.sport_title}*\n` +
+      `*${game.home_team}* vs *${game.away_team}*\n` +
+      `📅 ${date}\n\n` +
+      (market ? '¿A quién le apuestas?' : '⚠️ Sin momios disponibles aún.\n¿Quieres ver otros partidos?');
+
+    if (!market) {
+      return whatsappService.sendButtons(from, body, [
+        { id: 'show_sports', title: '🔍 Ver otros partidos' }
+      ]);
+    }
+
+    const betRows = market.outcomes.map(o => ({
+      id: `bet_${game.id}_${o.name}_${o.price}`,
+      title: o.name === 'Draw' ? `Empate` : o.name.substring(0, 24),
+      description: `Momio: ${parseFloat(o.price).toFixed(2)}`
+    }));
+
+    return whatsappService.sendList(
+      from,
+      body,
+      whatsappService.getListButton('games'),
+      [
+        { title: 'Selecciona tu apuesta', rows: betRows },
+        { title: 'Otras opciones', rows: [{ id: 'show_sports', title: '🔍 Ver otros partidos', description: 'Buscar otro partido' }] }
+      ]
     );
   }
 

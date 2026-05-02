@@ -337,28 +337,47 @@ class OddsService {
       .trim();
   }
 
+  sportAliases() {
+    return [
+      { keys: ['nba', 'basket', 'basquetbol', 'basquet'], sport: 'basketball_nba' },
+      { keys: ['mlb', 'beisbol', 'bisbol', 'baseball'], sport: 'baseball_mlb' },
+      { keys: ['ligamx', 'ligamx', 'liguilla', 'tigres', 'chivas', 'america', 'pumas', 'cruzazul', 'monterrey', 'toluca', 'leon', 'atlas', 'necaxa', 'santos', 'puebla', 'queretaro', 'tijuana'], sport: 'soccer_mexico_ligamx' },
+      { keys: ['soccer', 'futbol', 'futsal', 'liga'], sport: 'soccer_mexico_ligamx' }
+    ];
+  }
+
+  /**
+   * Detects if query mentions a known sport keyword. Returns sport key or null.
+   */
+  detectSportIntent(query) {
+    const q = this.normalizeStr(query);
+    for (const { keys, sport } of this.sportAliases()) {
+      if (keys.some(k => q.includes(k))) return sport;
+    }
+    return null;
+  }
+
   /**
    * Búsqueda de partidos por nombre de equipo o deporte.
+   * Async: fetches on-demand when cache empty or expired.
    * Retorna [] si no hay coincidencias.
    */
-  searchGames(query) {
+  async searchGames(query) {
     const q = this.normalizeStr(query);
     const minTimeMs = Date.now() + 30 * 60 * 1000;
 
-    // Sport keyword → return available games for that sport
-    const sportAliases = [
-      { keys: ['nba', 'basket', 'basquetbol', 'basquet'], sport: 'basketball_nba' },
-      { keys: ['mlb', 'beisbol', 'bisbol', 'baseball'], sport: 'baseball_mlb' },
-      { keys: ['ligamx', 'liga mx', 'liguilla', 'tigres', 'chivas', 'america', 'pumas', 'cruz azul', 'monterrey', 'toluca', 'leon', 'atlas', 'necaxa', 'santos', 'puebla', 'queretaro', 'tijuana'], sport: 'soccer_mexico_ligamx' },
-      { keys: ['soccer', 'futbol', 'futsal', 'liga'], sport: 'soccer_mexico_ligamx' }
-    ];
-    for (const { keys, sport } of sportAliases) {
-      if (keys.some(k => q.includes(k.replace(' ', '')))) {
-        return this.getAvailableGames(sport, 5);
+    // Sport keyword → fetch on-demand (respects TTL)
+    for (const { keys, sport } of this.sportAliases()) {
+      if (keys.some(k => q.includes(k))) {
+        return this.getOrFetchOdds(sport, 5);
       }
     }
 
-    // Team name search — match words with 4+ chars against team names
+    // Team name search — if cache empty, try fetching all sports first
+    if (this.cache.games.length === 0) {
+      await this.fetchAllOdds();
+    }
+
     const words = q.split(' ').filter(w => w.length >= 4);
     if (words.length === 0) return [];
 
