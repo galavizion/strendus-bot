@@ -318,20 +318,26 @@ class WhatsAppService {
    * Formatear fecha
    */
   formatGameDate(dateString) {
+    const tz = 'America/Mexico_City';
     const date = new Date(dateString);
     const now = new Date();
-    const diffDays = Math.floor((date - now) / (1000 * 60 * 60 * 24));
 
-    let dayText = '';
-    if (diffDays === 0) dayText = 'Hoy';
-    else if (diffDays === 1) dayText = 'Mañana';
-    else dayText = date.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+    // Compara fechas como strings en zona México para evitar errores por UTC
+    const toMxDate = d => d.toLocaleDateString('es-MX', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+    const gameDay = toMxDate(date);
+    const today   = toMxDate(now);
+    const tomorrow = toMxDate(new Date(now.getTime() + 24 * 60 * 60 * 1000));
+
+    let dayText;
+    if (gameDay === today)         dayText = 'Hoy';
+    else if (gameDay === tomorrow)  dayText = 'Mañana';
+    else                            dayText = date.toLocaleDateString('es-MX', { timeZone: tz, day: 'numeric', month: 'short' });
 
     const time = date.toLocaleTimeString('es-MX', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
-      timeZone: 'America/Mexico_City'
+      timeZone: tz
     });
 
     return `${dayText}, ${time}`;
