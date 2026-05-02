@@ -118,7 +118,7 @@ class BotController {
    * Mostrar menú principal
    */
   async showMainMenu(from) {
-    const verification = strendusAPI.verifyUser(from);
+    const verification = await strendusAPI.verifyUser(from);
 
     if (!verification.exists) {
       const msgData = whatsappService.buildUnregisteredMessage();
@@ -147,7 +147,7 @@ class BotController {
    * Mostrar saldo
    */
   async showBalance(from) {
-    const userInfo = strendusAPI.getUserInfo(from);
+    const userInfo = await strendusAPI.getUserInfo(from);
 
     if (!userInfo) {
       return whatsappService.sendText(from, '❌ Error obteniendo tu saldo.');
@@ -322,7 +322,7 @@ class BotController {
    */
   async showBetConfirmation(from) {
     const state = userStates.get(from);
-    const balance = strendusAPI.getBalance(from);
+    const balance = await strendusAPI.getBalance(from);
 
     if (state.amount > balance) {
       userStates.delete(from);
@@ -372,7 +372,7 @@ class BotController {
     }
 
     // Crear apuesta
-    const result = strendusAPI.createBet(from, {
+    const result = await strendusAPI.createBet(from, {
       gameId: state.gameId,
       game: {
         home_team: state.game.home_team,
@@ -415,7 +415,7 @@ class BotController {
    * Mostrar historial de apuestas
    */
   async showBetHistory(from) {
-    const bets = strendusAPI.getBetHistory(from, 15);
+    const bets = await strendusAPI.getBetHistory(from, 15);
 
     if (bets.length === 0) {
       return whatsappService.sendText(from, '📋 No tienes apuestas registradas aún.');
@@ -450,7 +450,7 @@ class BotController {
    */
   async showBetDetails(from, historyId) {
     const betId = historyId.replace('history_', '');
-    const bet = strendusAPI.getBet(from, betId);
+    const bet = await strendusAPI.getBet(from, betId);
 
     if (!bet) {
       return whatsappService.sendText(from, '❌ Apuesta no encontrada.');
@@ -498,7 +498,7 @@ class BotController {
    * Mostrar apuestas pendientes para cancelar
    */
   async showPendingBetsToCancel(from) {
-    const pendingBets = strendusAPI.getPendingBets(from);
+    const pendingBets = await strendusAPI.getPendingBets(from);
 
     if (pendingBets.length === 0) {
       return whatsappService.sendText(from, '📋 No tienes apuestas pendientes para cancelar.');
@@ -525,7 +525,7 @@ class BotController {
    */
   async cancelPendingBet(from, cancelId) {
     const betId = cancelId.replace('cancelbet_', '');
-    const bet = strendusAPI.getBet(from, betId);
+    const bet = await strendusAPI.getBet(from, betId);
 
     if (!bet) {
       return whatsappService.sendText(from, '❌ Apuesta no encontrada.');
@@ -546,7 +546,7 @@ class BotController {
       }
     }
 
-    const result = strendusAPI.cancelBet(from, betId);
+    const result = await strendusAPI.cancelBet(from, betId);
 
     if (!result.success) {
       return whatsappService.sendText(from, `❌ ${result.message}`);
@@ -602,7 +602,7 @@ class BotController {
    * Verificar número de cliente
    */
   async verifyClientId(from, clientId) {
-    const result = strendusAPI.verifyByClientId(clientId.trim(), from);
+    const result = await strendusAPI.verifyByClientId(clientId.trim(), from);
 
     userStates.delete(from);
 
@@ -695,7 +695,7 @@ class BotController {
     if (isReco) return this.showRecommendations(from);
 
     // 3. IA como fallback: entiende lenguaje libre que no matcheó keywords
-    const userName = strendusAPI.getUserInfo(from)?.name || null;
+    const userName = (await strendusAPI.getUserInfo(from))?.name || null;
     const intent = await aiService.parseIntent(text, userName);
     if (!intent) return null;
 

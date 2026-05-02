@@ -1,93 +1,55 @@
-const fs = require('fs');
-const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
 
-const USERS_FILE = path.join(__dirname, '../data/users.json');
-const USERS_SEED  = path.join(__dirname, '../data/users.seed.json');
+let _client = null;
+function db() {
+  if (!_client) {
+    _client = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
+    );
+  }
+  return _client;
+}
+
+function normalizePhone(phone) {
+  const s = String(phone || '').trim().replace(/\s+/g, '');
+  return s.startsWith('+') ? s : '+' + s;
+}
 
 class StrendusAPIService {
-  constructor() {
-    this.loadUsers();
-  }
+  normalizePhone(phone) { return normalizePhone(phone); }
 
-  /**
-   * Cargar usuarios desde el archivo JSON.
-   * Si no existe, copia el seed (datos iniciales) y lo crea.
-   */
-  loadUsers() {
-    try {
-      if (!fs.existsSync(USERS_FILE)) {
-        const seed = fs.existsSync(USERS_SEED)
-          ? fs.readFileSync(USERS_SEED, 'utf8')
-          : JSON.stringify({ users: [] });
-        fs.mkdirSync(path.dirname(USERS_FILE), { recursive: true });
-        fs.writeFileSync(USERS_FILE, seed);
-        console.log('📋 users.json creado desde seed.');
-      }
-      const data = fs.readFileSync(USERS_FILE, 'utf8');
-      this.usersData = JSON.parse(data);
-    } catch (error) {
-      console.error('Error cargando usuarios:', error.message);
-      this.usersData = { users: [] };
-    }
-  }
+  async verifyUser(phone) {
+    const p = normalizePhone(phone);
+    const { data: user } = await db()
+      .from('users')
+      .select('client_id, name, balance, email')
+      .eq('phone', p)
+      .maybeSingle();
 
-  /**
-   * Guardar usuarios al archivo JSON
-   */
-  saveUsers() {
-    try {
-      fs.writeFileSync(USERS_FILE, JSON.stringify(this.usersData, null, 2));
-    } catch (error) {
-      console.error('Error guardando usuarios:', error.message);
-    }
-  }
-
-  normalizePhone(phone) {
-    return String(phone || '').replace(/^\+/, '');
-  }
-
-  /**
-   * Verificar usuario por número de teléfono
-   */
-  verifyUser(phone) {
-    const normalized = this.normalizePhone(phone);
-    const user = this.usersData.users.find(u => this.normalizePhone(u.phone) === normalized);
-    
-    if (!user) {
-      return {
-        exists: false,
-        message: 'Usuario no encontrado'
-      };
-    }
+    if (!user) return { exists: false, message: 'Usuario no encontrado' };
 
     return {
       exists: true,
-      user: {
-        clientId: user.clientId,
-        name: user.name,
-        balance: user.balance,
-        email: user.email
-      }
+      user: { clientId: user.client_id, name: user.name, balance: user.balance, email: user.email }
     };
   }
 
-  /**
-   * Verificar usuario por número de cliente
-   */
-  verifyByClientId(clientId, phone) {
-    const input = clientId.trim().toLowerCase();
-    const user = this.usersData.users.find(
-      u => u.clientId === clientId.trim() || u.email.toLowerCase() === input
-    );
+  async verifyByClientId(clientId, phone) {
+    const input = clientId.trim();
+    let user = null;
 
-    if (!user) {
-      return {
-        success: false,
-        message: 'Número de cliente o correo no encontrado'
-      };
+    const { data: byId } = await db().from('users').select('*').eq('client_id', input).maybeSingle();
+    if (byId) {
+      user = byId;
+    } else {
+      const { data: byEmail } = await db().from('users').select('*').ilike('email', input).maybeSingle();
+      user = byEmail;
     }
 
-    if (this.normalizePhone(user.phone) !== this.normalizePhone(phone)) {
+    if (!user) return { success: false, message: 'Número de cliente o correo no encontrado' };
+
+    if (normalizePhone(user.phone) !== normalizePhone(phone)) {
       return {
         success: false,
         message: `El número de cliente ${clientId} está registrado con otro número de teléfono.`,
@@ -97,247 +59,229 @@ class StrendusAPIService {
 
     return {
       success: true,
-      user: {
-        clientId: user.clientId,
-        name: user.name,
-        balance: user.balance,
-        email: user.email
-      }
+      user: { clientId: user.client_id, name: user.name, balance: user.balance, email: user.email }
     };
   }
 
-  /**
-   * Obtener saldo del usuario
-   */
-  getBalance(phone) {
-    const user = this.usersData.users.find(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
-    return user ? user.balance : 0;
+  async getBalance(phone) {
+    const { data } = await db().from('users').select('balance').eq('phone', normalizePhone(phone)).maybeSingle();
+    return data?.balance ?? 0;
   }
 
-  /**
-   * Actualizar saldo del usuario
-   */
-  updateBalance(phone, amount) {
-    const userIndex = this.usersData.users.findIndex(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
-    
-    if (userIndex === -1) return false;
-
-    this.usersData.users[userIndex].balance += amount;
-    this.saveUsers();
-    
-    return this.usersData.users[userIndex].balance;
+  async setBalance(phone, balance) {
+    const { data } = await db()
+      .from('users')
+      .update({ balance })
+      .eq('phone', normalizePhone(phone))
+      .select('balance')
+      .single();
+    return data?.balance ?? null;
   }
 
-  /**
-   * Crear una apuesta
-   */
-  createBet(phone, betData) {
-    const userIndex = this.usersData.users.findIndex(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
-    
-    if (userIndex === -1) {
-      return { success: false, message: 'Usuario no encontrado' };
-    }
+  async updateBalance(phone, delta) {
+    const current = await this.getBalance(phone);
+    return this.setBalance(phone, current + delta);
+  }
 
-    const user = this.usersData.users[userIndex];
+  async getUserInfo(phone) {
+    const p = normalizePhone(phone);
+    const { data: user } = await db()
+      .from('users')
+      .select('client_id, name, email, balance')
+      .eq('phone', p)
+      .maybeSingle();
 
-    // Verificar saldo suficiente
+    if (!user) return null;
+
+    const { data: bets } = await db().from('bets').select('status').eq('user_phone', p);
+    const list = bets || [];
+
+    return {
+      clientId: user.client_id,
+      name: user.name,
+      email: user.email,
+      balance: user.balance,
+      totalBets: list.length,
+      pendingBets: list.filter(b => b.status === 'pending').length,
+      wonBets: list.filter(b => b.status === 'won').length,
+      lostBets: list.filter(b => b.status === 'lost').length
+    };
+  }
+
+  async createBet(phone, betData) {
+    const p = normalizePhone(phone);
+    const { data: user } = await db().from('users').select('balance').eq('phone', p).maybeSingle();
+
+    if (!user) return { success: false, message: 'Usuario no encontrado' };
     if (user.balance < betData.amount) {
-      return { 
-        success: false, 
-        message: 'Saldo insuficiente',
-        currentBalance: user.balance 
-      };
+      return { success: false, message: 'Saldo insuficiente', currentBalance: user.balance };
     }
 
-    // Crear apuesta
-    const bet = {
-      id: `BET-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      gameId: betData.gameId,
+    const betId = `BET-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newBalance = user.balance - betData.amount;
+
+    const { error } = await db().from('bets').insert({
+      id: betId,
+      user_phone: p,
+      game_id: betData.gameId,
       game: betData.game,
       team: betData.team,
       odds: betData.odds,
       amount: betData.amount,
-      potentialWin: betData.potentialWin,
-      status: 'pending', // pending, won, lost, cancelled
-      createdAt: new Date().toISOString(),
+      potential_win: betData.potentialWin,
+      status: 'pending',
+      created_at: new Date().toISOString(),
       result: null
-    };
-
-    // Descontar saldo
-    this.usersData.users[userIndex].balance -= betData.amount;
-    
-    // Agregar apuesta
-    if (!this.usersData.users[userIndex].bets) {
-      this.usersData.users[userIndex].bets = [];
-    }
-    this.usersData.users[userIndex].bets.unshift(bet);
-
-    // Mantener solo las últimas 50 apuestas
-    if (this.usersData.users[userIndex].bets.length > 50) {
-      this.usersData.users[userIndex].bets = this.usersData.users[userIndex].bets.slice(0, 50);
-    }
-
-    this.saveUsers();
-
-    return {
-      success: true,
-      bet: bet,
-      newBalance: this.usersData.users[userIndex].balance
-    };
-  }
-
-  /**
-   * Obtener historial de apuestas
-   */
-  getBetHistory(phone, limit = 15) {
-    const user = this.usersData.users.find(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
-    
-    if (!user || !user.bets) {
-      return [];
-    }
-
-    return user.bets.slice(0, limit);
-  }
-
-  /**
-   * Obtener una apuesta específica
-   */
-  getBet(phone, betId) {
-    const user = this.usersData.users.find(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
-    
-    if (!user || !user.bets) {
-      return null;
-    }
-
-    return user.bets.find(b => b.id === betId);
-  }
-
-  /**
-   * Cancelar una apuesta
-   */
-  cancelBet(phone, betId) {
-    const userIndex = this.usersData.users.findIndex(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
-    
-    if (userIndex === -1) {
-      return { success: false, message: 'Usuario no encontrado' };
-    }
-
-    const user = this.usersData.users[userIndex];
-    const betIndex = user.bets?.findIndex(b => b.id === betId);
-
-    if (betIndex === -1 || betIndex === undefined) {
-      return { success: false, message: 'Apuesta no encontrada' };
-    }
-
-    const bet = user.bets[betIndex];
-
-    if (bet.status !== 'pending') {
-      return { success: false, message: 'Solo se pueden cancelar apuestas pendientes' };
-    }
-
-    // Devolver saldo
-    this.usersData.users[userIndex].balance += bet.amount;
-    
-    // Marcar como cancelada
-    this.usersData.users[userIndex].bets[betIndex].status = 'cancelled';
-    this.usersData.users[userIndex].bets[betIndex].cancelledAt = new Date().toISOString();
-
-    this.saveUsers();
-
-    return {
-      success: true,
-      refundedAmount: bet.amount,
-      newBalance: this.usersData.users[userIndex].balance
-    };
-  }
-
-  /**
-   * Actualizar resultado de una apuesta
-   */
-  updateBetResult(phone, betId, won, result) {
-    const userIndex = this.usersData.users.findIndex(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
-    
-    if (userIndex === -1) return false;
-
-    const betIndex = this.usersData.users[userIndex].bets?.findIndex(b => b.id === betId);
-    
-    if (betIndex === -1 || betIndex === undefined) return false;
-
-    const bet = this.usersData.users[userIndex].bets[betIndex];
-
-    // Actualizar estado
-    this.usersData.users[userIndex].bets[betIndex].status = won ? 'won' : 'lost';
-    this.usersData.users[userIndex].bets[betIndex].result = result;
-    this.usersData.users[userIndex].bets[betIndex].settledAt = new Date().toISOString();
-
-    // Si ganó, agregar ganancia
-    if (won) {
-      this.usersData.users[userIndex].balance += bet.potentialWin;
-    }
-
-    this.saveUsers();
-
-    return {
-      success: true,
-      won: won,
-      amount: won ? bet.potentialWin : bet.amount,
-      newBalance: this.usersData.users[userIndex].balance
-    };
-  }
-
-  /**
-   * Obtener apuestas pendientes del usuario
-   */
-  getPendingBets(phone) {
-    const user = this.usersData.users.find(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
-    
-    if (!user || !user.bets) {
-      return [];
-    }
-
-    return user.bets.filter(b => b.status === 'pending');
-  }
-
-  /**
-   * Obtener todas las apuestas pendientes de todos los usuarios (para procesar resultados)
-   */
-  getAllPendingBets() {
-    const allPendingBets = [];
-
-    this.usersData.users.forEach(user => {
-      if (user.bets) {
-        const userPendingBets = user.bets
-          .filter(b => b.status === 'pending')
-          .map(b => ({
-            ...b,
-            userPhone: user.phone,
-            userName: user.name
-          }));
-        
-        allPendingBets.push(...userPendingBets);
-      }
     });
 
-    return allPendingBets;
-  }
+    if (error) return { success: false, message: error.message };
 
-  /**
-   * Obtener información completa del usuario
-   */
-  getUserInfo(phone) {
-    const user = this.usersData.users.find(u => this.normalizePhone(u.phone) === this.normalizePhone(phone));
-    
-    if (!user) return null;
+    await db().from('users').update({ balance: newBalance }).eq('phone', p);
 
     return {
-      clientId: user.clientId,
-      name: user.name,
-      email: user.email,
-      balance: user.balance,
-      totalBets: user.bets?.length || 0,
-      pendingBets: user.bets?.filter(b => b.status === 'pending').length || 0,
-      wonBets: user.bets?.filter(b => b.status === 'won').length || 0,
-      lostBets: user.bets?.filter(b => b.status === 'lost').length || 0
+      success: true,
+      bet: { id: betId, ...betData, status: 'pending', createdAt: new Date().toISOString() },
+      newBalance
+    };
+  }
+
+  async getBetHistory(phone, limit = 15) {
+    const { data } = await db()
+      .from('bets')
+      .select('*')
+      .eq('user_phone', normalizePhone(phone))
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    return (data || []).map(this._mapBet);
+  }
+
+  async getBet(phone, betId) {
+    const { data } = await db()
+      .from('bets')
+      .select('*')
+      .eq('id', betId)
+      .eq('user_phone', normalizePhone(phone))
+      .maybeSingle();
+    return data ? this._mapBet(data) : null;
+  }
+
+  async getPendingBets(phone) {
+    const { data } = await db()
+      .from('bets')
+      .select('*')
+      .eq('user_phone', normalizePhone(phone))
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+    return (data || []).map(this._mapBet);
+  }
+
+  async getAllPendingBets() {
+    const { data } = await db()
+      .from('bets')
+      .select('*, users(name)')
+      .eq('status', 'pending');
+    return (data || []).map(b => ({
+      ...this._mapBet(b),
+      userPhone: b.user_phone,
+      userName: b.users?.name
+    }));
+  }
+
+  async cancelBet(phone, betId) {
+    const bet = await this.getBet(phone, betId);
+    if (!bet) return { success: false, message: 'Apuesta no encontrada' };
+    if (bet.status !== 'pending') return { success: false, message: 'Solo se pueden cancelar apuestas pendientes' };
+
+    await db().from('bets').update({
+      status: 'cancelled',
+      cancelled_at: new Date().toISOString()
+    }).eq('id', betId);
+
+    const newBalance = await this.updateBalance(phone, bet.amount);
+    return { success: true, refundedAmount: bet.amount, newBalance };
+  }
+
+  async updateBetResult(phone, betId, won, result) {
+    const bet = await this.getBet(phone, betId);
+    if (!bet) return false;
+
+    await db().from('bets').update({
+      status: won ? 'won' : 'lost',
+      result,
+      settled_at: new Date().toISOString()
+    }).eq('id', betId);
+
+    if (won) await this.updateBalance(phone, bet.potentialWin);
+
+    const newBalance = await this.getBalance(phone);
+    return { success: true, won, amount: won ? bet.potentialWin : bet.amount, newBalance };
+  }
+
+  // --- Admin methods ---
+
+  async getAllUsers() {
+    const { data } = await db().from('users').select('*').order('registered_at', { ascending: false });
+    return (data || []).map(u => ({
+      clientId: u.client_id,
+      phone: u.phone,
+      name: u.name,
+      email: u.email,
+      balance: u.balance,
+      registeredAt: u.registered_at,
+      bets: []
+    }));
+  }
+
+  async addUser(userData) {
+    const { data, error } = await db().from('users').insert({
+      client_id: userData.clientId,
+      phone: normalizePhone(userData.phone),
+      name: userData.name,
+      email: userData.email || '',
+      balance: parseInt(userData.balance) || 5000,
+      registered_at: new Date().toISOString()
+    }).select().single();
+
+    if (error) throw new Error(error.message);
+    return { ...data, clientId: data.client_id };
+  }
+
+  async deleteUser(phone) {
+    const { error } = await db().from('users').delete().eq('phone', normalizePhone(phone));
+    return !error;
+  }
+
+  async getAllBets(filter = {}) {
+    let query = db()
+      .from('bets')
+      .select('*, users(name)')
+      .order('created_at', { ascending: false });
+
+    if (filter.phone) query = query.eq('user_phone', normalizePhone(filter.phone));
+    if (filter.status) query = query.eq('status', filter.status);
+
+    const { data } = await query;
+    return (data || []).map(b => ({
+      ...this._mapBet(b),
+      userPhone: b.user_phone,
+      userName: b.users?.name
+    }));
+  }
+
+  _mapBet(b) {
+    return {
+      id: b.id,
+      gameId: b.game_id,
+      game: b.game,
+      team: b.team,
+      odds: b.odds,
+      amount: b.amount,
+      potentialWin: b.potential_win,
+      status: b.status,
+      createdAt: b.created_at,
+      result: b.result,
+      settledAt: b.settled_at,
+      cancelledAt: b.cancelled_at
     };
   }
 }

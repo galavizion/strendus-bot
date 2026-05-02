@@ -29,71 +29,62 @@ function adminAuth(req, res, next) {
   next();
 }
 
-// Serve admin HTML without auth (the page itself handles the login UI)
+// Serve admin HTML without auth
 router.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // --- Users ---
-router.get('/api/users', adminAuth, (req, res) => {
-  res.json(strendusAPI.usersData.users);
+router.get('/api/users', adminAuth, async (req, res) => {
+  try {
+    const users = await strendusAPI.getAllUsers();
+    res.json(users);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.post('/api/users', adminAuth, (req, res) => {
+router.post('/api/users', adminAuth, async (req, res) => {
   const { clientId, name, phone, email, balance } = req.body || {};
 
   if (!clientId) return res.status(400).json({ error: 'El ID de cliente es requerido' });
   if (!name)     return res.status(400).json({ error: 'El nombre es requerido' });
   if (!phone)    return res.status(400).json({ error: 'El teléfono es requerido' });
 
-  const existing = strendusAPI.usersData.users.find(
-    u => u.phone === phone || u.clientId === clientId
-  );
-
-  if (existing) {
-    return res.status(409).json({ error: 'Ya existe un usuario con ese teléfono o ID de cliente' });
+  try {
+    const newUser = await strendusAPI.addUser({ clientId, name, phone, email, balance });
+    console.log(`✅ Admin: usuario ${name} (${clientId}) agregado`);
+    res.status(201).json(newUser);
+  } catch (e) {
+    if (e.message.includes('unique') || e.message.includes('duplicate')) {
+      return res.status(409).json({ error: 'Ya existe un usuario con ese teléfono o ID de cliente' });
+    }
+    res.status(500).json({ error: e.message });
   }
-
-  const newUser = {
-    clientId,
-    name,
-    phone,
-    email: email || '',
-    balance: parseInt(balance) || 5000,
-    registeredAt: new Date().toISOString(),
-    bets: []
-  };
-
-  strendusAPI.usersData.users.push(newUser);
-  strendusAPI.saveUsers();
-
-  console.log(`✅ Admin: usuario ${name} (${clientId}) agregado`);
-  res.status(201).json(newUser);
 });
 
-router.patch('/api/users/:phone/balance', adminAuth, (req, res) => {
+router.patch('/api/users/:phone/balance', adminAuth, async (req, res) => {
   const phone = decodeURIComponent(req.params.phone);
   const { balance } = req.body || {};
 
-  const idx = strendusAPI.usersData.users.findIndex(u => u.phone === phone);
-  if (idx === -1) return res.status(404).json({ error: 'Usuario no encontrado' });
-
-  strendusAPI.usersData.users[idx].balance = parseInt(balance) || 0;
-  strendusAPI.saveUsers();
-
-  res.json({ success: true, balance: strendusAPI.usersData.users[idx].balance });
+  try {
+    const newBalance = await strendusAPI.setBalance(phone, parseInt(balance) || 0);
+    if (newBalance === null) return res.status(404).json({ error: 'Usuario no encontrado' });
+    res.json({ success: true, balance: newBalance });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.delete('/api/users/:phone', adminAuth, (req, res) => {
+router.delete('/api/users/:phone', adminAuth, async (req, res) => {
   const phone = decodeURIComponent(req.params.phone);
-  const idx = strendusAPI.usersData.users.findIndex(u => u.phone === phone);
-
-  if (idx === -1) return res.status(404).json({ error: 'Usuario no encontrado' });
-
-  strendusAPI.usersData.users.splice(idx, 1);
-  strendusAPI.saveUsers();
-
-  res.json({ success: true });
+  try {
+    const ok = await strendusAPI.deleteUser(phone);
+    if (!ok) return res.status(404).json({ error: 'Usuario no encontrado' });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // --- Games (Odds cache) ---
@@ -105,30 +96,24 @@ router.get('/api/games', adminAuth, (req, res) => {
   });
 });
 
-// --- Events (endpoint gratuito — sin costo de cuota) ---
+// --- Events ---
 router.get('/api/events', adminAuth, async (req, res) => {
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {
     return res.json({ events: [], total: 0, oddsCacheCount: 0, error: 'ODDS_API_KEY no está configurada en Railway.' });
   }
   try {
-    // Fetch events (free, no quota) and odds cache in parallel
     const [events, oddsGames] = await Promise.all([
       oddsService.fetchAllEvents(),
       Promise.resolve(oddsService.cache.games)
     ]);
 
-    // Build lookups
     const eventsById = {};
     events.forEach(e => { eventsById[e.id] = e; });
     const oddsIds = new Set(oddsGames.map(g => g.id));
 
-    // Primary: cached odds games (have bookmakers). Augment with fresh event data if available.
     const result = oddsGames.map(g => ({ ...(eventsById[g.id] || {}), ...g }));
-
-    // Secondary: events that have no cached odds yet (no bookmakers)
     events.forEach(e => { if (!oddsIds.has(e.id)) result.push(e); });
-
     result.sort((a, b) => new Date(a.commence_time) - new Date(b.commence_time));
 
     res.json({
@@ -156,7 +141,6 @@ router.post('/api/refresh-odds', adminAuth, async (req, res) => {
   if (!apiKey) {
     return res.status(200).json({ success: false, error: 'ODDS_API_KEY no está configurada en las variables de Railway.' });
   }
-
   try {
     const games = await oddsService.fetchAllOdds();
     if (games.length === 0) {
@@ -172,24 +156,17 @@ router.post('/api/refresh-odds', adminAuth, async (req, res) => {
 });
 
 // --- Bets ---
-router.get('/api/bets', adminAuth, (req, res) => {
-  const { user, status } = req.query;
-  let allBets = [];
-
-  strendusAPI.usersData.users.forEach(u => {
-    if (user && u.phone !== user) return;
-    const userBets = (u.bets || []).map(b => ({
-      ...b,
-      userPhone: u.phone,
-      userName: u.name
-    }));
-    allBets.push(...userBets);
-  });
-
-  if (status) allBets = allBets.filter(b => b.status === status);
-
-  allBets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  res.json(allBets);
+router.get('/api/bets', adminAuth, async (req, res) => {
+  try {
+    const { user, status } = req.query;
+    const bets = await strendusAPI.getAllBets({
+      phone: user || null,
+      status: status || null
+    });
+    res.json(bets);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // --- Config ---

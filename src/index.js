@@ -88,44 +88,28 @@ const strendusAPI = require('./services/strendusAPI');
 /**
  * POST /api/strendus/verify - Verificar usuario
  */
-app.post('/api/strendus/verify', (req, res) => {
+app.post('/api/strendus/verify', async (req, res) => {
   const { phone, token } = req.body;
-
-  // Verificar token de autenticación
-  if (token !== process.env.STRENDUS_API_TOKEN) {
-    return res.status(401).json({ error: 'Token inválido' });
-  }
-
-  const result = strendusAPI.verifyUser(phone);
-  res.json(result);
+  if (token !== process.env.STRENDUS_API_TOKEN) return res.status(401).json({ error: 'Token inválido' });
+  res.json(await strendusAPI.verifyUser(phone));
 });
 
 /**
  * GET /api/strendus/balance - Obtener saldo
  */
-app.get('/api/strendus/balance', (req, res) => {
+app.get('/api/strendus/balance', async (req, res) => {
   const { phone, token } = req.query;
-
-  if (token !== process.env.STRENDUS_API_TOKEN) {
-    return res.status(401).json({ error: 'Token inválido' });
-  }
-
-  const balance = strendusAPI.getBalance(phone);
-  res.json({ balance });
+  if (token !== process.env.STRENDUS_API_TOKEN) return res.status(401).json({ error: 'Token inválido' });
+  res.json({ balance: await strendusAPI.getBalance(phone) });
 });
 
 /**
  * POST /api/strendus/bet - Crear apuesta
  */
-app.post('/api/strendus/bet', (req, res) => {
+app.post('/api/strendus/bet', async (req, res) => {
   const { phone, token, betData } = req.body;
-
-  if (token !== process.env.STRENDUS_API_TOKEN) {
-    return res.status(401).json({ error: 'Token inválido' });
-  }
-
-  const result = strendusAPI.createBet(phone, betData);
-  res.json(result);
+  if (token !== process.env.STRENDUS_API_TOKEN) return res.status(401).json({ error: 'Token inválido' });
+  res.json(await strendusAPI.createBet(phone, betData));
 });
 
 // ============================================
@@ -148,8 +132,11 @@ app.get('/health', (req, res) => {
  * GET /stats - Estadísticas del sistema
  */
 app.get('/stats', async (req, res) => {
-  const apiUsage = await oddsService.getApiUsage();
-  const allPendingBets = strendusAPI.getAllPendingBets();
+  const [apiUsage, allPendingBets, allUsers] = await Promise.all([
+    oddsService.getApiUsage(),
+    strendusAPI.getAllPendingBets(),
+    strendusAPI.getAllUsers()
+  ]);
 
   res.json({
     oddsAPI: {
@@ -162,7 +149,7 @@ app.get('/stats', async (req, res) => {
       gamesAvailable: oddsService.cache.games.length
     },
     users: {
-      total: strendusAPI.usersData.users.length
+      total: allUsers.length
     }
   });
 });
