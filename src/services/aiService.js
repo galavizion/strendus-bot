@@ -55,4 +55,83 @@ Reglas:
   }
 }
 
-module.exports = { parseIntent };
+/**
+ * Extrae nombres de equipos mencionados en un mensaje de parlay.
+ * Retorna array de strings (puede estar vacío).
+ */
+async function parseParlayTeams(message) {
+  if (!process.env.OPENAI_API_KEY) return [];
+  try {
+    const response = await getClient().chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `Extrae los nombres de equipos deportivos del mensaje. Responde ÚNICAMENTE con JSON válido, sin markdown:
+{"teams": ["Nombre1", "Nombre2"]}
+Si no hay equipos, responde: {"teams": []}`
+        },
+        { role: 'user', content: message }
+      ],
+      max_tokens: 100,
+      temperature: 0.1
+    });
+    const raw = response.choices[0].message.content.trim();
+    return JSON.parse(raw).teams || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * Usa GPT para elegir 3-4 piernas que alcancen el multiplicador objetivo.
+ * games: array de juegos con bookmakers. amount y targetWin en MXN.
+ * Retorna array de { gameId, team, odds } o null si falla.
+ */
+async function buildParlayCombo(games, amount, targetWin) {
+  if (!process.env.OPENAI_API_KEY) return null;
+
+  const targetMultiplier = targetWin / amount;
+
+  const gamesText = games.map(g => {
+    const market = g.bookmakers?.[0]?.markets?.find(m => m.key === 'h2h');
+    if (!market) return null;
+    const outcomes = market.outcomes
+      .map(o => `${o.name === 'Draw' ? 'Empate' : o.name}: ${o.price}`)
+      .join(', ');
+    return `ID:${g.id} | ${g.sport_title} | ${g.home_team} vs ${g.away_team} | ${outcomes}`;
+  }).filter(Boolean).join('\n');
+
+  if (!gamesText) return null;
+
+  try {
+    const response = await getClient().chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `Eres experto en apuestas deportivas. Elige entre 3 y 4 partidos para armar un parlay cuya cuota combinada sea lo más cercana a ${targetMultiplier.toFixed(1)}x.
+Reglas:
+- Máximo 4 piernas, mínimo 3
+- Prefiere cuotas entre 1.2 y 3.5 (no demasiado arriesgadas)
+- Usa exactamente el nombre del equipo o "Empate" tal como aparece en la lista
+- Responde ÚNICAMENTE con JSON válido, sin markdown:
+{"legs": [{"gameId": "...", "team": "NombreExacto", "odds": 1.8}]}`
+        },
+        {
+          role: 'user',
+          content: `Partidos disponibles:\n${gamesText}\n\nObjetivo: multiplicador ~${targetMultiplier.toFixed(1)}x (apostar $${amount} para ganar $${targetWin})`
+        }
+      ],
+      max_tokens: 300,
+      temperature: 0.3
+    });
+    const raw = response.choices[0].message.content.trim();
+    return JSON.parse(raw).legs || null;
+  } catch (e) {
+    console.error('buildParlayCombo error:', e.message);
+    return null;
+  }
+}
+
+module.exports = { parseIntent, parseParlayTeams, buildParlayCombo };

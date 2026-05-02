@@ -33,18 +33,25 @@ class ResultsService {
     this.isProcessing = true;
 
     try {
-      const pendingBets = strendusAPI.getAllPendingBets();
+      const [pendingBets, pendingParlays] = await Promise.all([
+        strendusAPI.getAllPendingBets(),
+        strendusAPI.getAllPendingParlays()
+      ]);
 
-      if (pendingBets.length === 0) {
+      if (pendingBets.length === 0 && pendingParlays.length === 0) {
         console.log('📊 No hay apuestas pendientes para procesar');
         this.isProcessing = false;
         return;
       }
 
-      console.log(`📊 Procesando ${pendingBets.length} apuestas pendientes...`);
+      console.log(`📊 Procesando ${pendingBets.length} apuestas y ${pendingParlays.length} parlays pendientes...`);
 
       for (const bet of pendingBets) {
         await this.processBet(bet);
+      }
+
+      for (const parlay of pendingParlays) {
+        await this.processParlay(parlay);
       }
 
       console.log('✅ Procesamiento de resultados completado');
@@ -119,6 +126,59 @@ class ResultsService {
       }
     } catch (error) {
       console.error('❌ Error enviando notificación:', error);
+    }
+  }
+
+  async processParlay(parlay) {
+    try {
+      for (const leg of parlay.legs) {
+        if (leg.status !== 'pending') continue;
+
+        const result = await oddsService.getGameResult(leg.gameId);
+        if (!result || !result.completed) continue;
+
+        const won = result.winner === leg.team;
+        const update = await strendusAPI.settleParlayLeg(parlay.id, leg.gameId, won, result);
+
+        if (!update) continue;
+
+        if (update.settled) {
+          await this.notifyParlayResult(update.parlay, update.won, update.newBalance);
+          console.log(`✅ Parlay ${parlay.id}: ${update.won ? 'GANADO' : 'PERDIDO'}`);
+          return;
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Error procesando parlay ${parlay.id}:`, error);
+    }
+  }
+
+  async notifyParlayResult(parlay, won, newBalance) {
+    try {
+      const phone = parlay.userPhone;
+
+      if (won) {
+        const legsText = parlay.legs
+          .map((l, i) => `${i + 1}. ${l.game.home_team} vs ${l.game.away_team} → ${l.team === 'Draw' ? 'Empate' : l.team} ✅`)
+          .join('\n');
+
+        const message = `🎉 ¡GANASTE EL PARLAY!\n\n${legsText}\n\n` +
+          `Cuota combinada: ${parlay.combinedOdds}x\n` +
+          `Ganancia: +$${parlay.potentialWin.toLocaleString('es-MX')}\n\n` +
+          `💰 Nuevo saldo: $${newBalance.toLocaleString('es-MX')} MXN`;
+
+        await whatsappService.sendText(phone, message);
+      } else {
+        const lostLeg = parlay.legs.find(l => l.status === 'lost');
+        const message = `📊 Parlay finalizado\n\n` +
+          `❌ ${lostLeg.game.home_team} vs ${lostLeg.game.away_team}\n` +
+          `Resultado: ${lostLeg.result.homeScore} - ${lostLeg.result.awayScore}\n\n` +
+          `💰 Saldo actual: $${newBalance.toLocaleString('es-MX')} MXN`;
+
+        await whatsappService.sendText(phone, message);
+      }
+    } catch (error) {
+      console.error('❌ Error notificando parlay:', error);
     }
   }
 

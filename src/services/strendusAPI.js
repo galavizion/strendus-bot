@@ -217,6 +217,132 @@ class StrendusAPIService {
     return { success: true, won, amount: won ? bet.potentialWin : bet.amount, newBalance };
   }
 
+  // --- Parlay methods ---
+
+  async createParlay(phone, parlayData) {
+    const p = normalizePhone(phone);
+    const { data: user } = await db().from('users').select('balance').eq('phone', p).maybeSingle();
+
+    if (!user) return { success: false, message: 'Usuario no encontrado' };
+    if (user.balance < parlayData.amount) {
+      return { success: false, message: 'Saldo insuficiente', currentBalance: user.balance };
+    }
+
+    const parlayId = `PAR-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newBalance = user.balance - parlayData.amount;
+
+    const { error } = await db().from('parlays').insert({
+      id: parlayId,
+      user_phone: p,
+      legs: parlayData.legs,
+      combined_odds: parlayData.combinedOdds,
+      amount: parlayData.amount,
+      potential_win: parlayData.potentialWin,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    });
+
+    if (error) return { success: false, message: error.message };
+
+    await db().from('users').update({ balance: newBalance }).eq('phone', p);
+
+    return {
+      success: true,
+      parlay: { id: parlayId, ...parlayData, status: 'pending' },
+      newBalance
+    };
+  }
+
+  async getParlay(phone, parlayId) {
+    const { data } = await db()
+      .from('parlays')
+      .select('*')
+      .eq('id', parlayId)
+      .eq('user_phone', normalizePhone(phone))
+      .maybeSingle();
+    return data ? this._mapParlay(data) : null;
+  }
+
+  async getParlayHistory(phone, limit = 10) {
+    const { data } = await db()
+      .from('parlays')
+      .select('*')
+      .eq('user_phone', normalizePhone(phone))
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    return (data || []).map(p => this._mapParlay(p));
+  }
+
+  async getAllPendingParlays() {
+    const { data } = await db()
+      .from('parlays')
+      .select('*')
+      .eq('status', 'pending');
+    return (data || []).map(p => this._mapParlay(p));
+  }
+
+  async cancelParlay(phone, parlayId) {
+    const parlay = await this.getParlay(phone, parlayId);
+    if (!parlay) return { success: false, message: 'Parlay no encontrado' };
+    if (parlay.status !== 'pending') return { success: false, message: 'Solo se pueden cancelar parlays pendientes' };
+
+    await db().from('parlays').update({
+      status: 'cancelled',
+      cancelled_at: new Date().toISOString()
+    }).eq('id', parlayId);
+
+    const newBalance = await this.updateBalance(phone, parlay.amount);
+    return { success: true, refundedAmount: parlay.amount, newBalance };
+  }
+
+  async settleParlayLeg(parlayId, legGameId, won, result) {
+    const { data: row } = await db().from('parlays').select('*').eq('id', parlayId).maybeSingle();
+    if (!row) return null;
+
+    const parlay = this._mapParlay(row);
+    const legs = parlay.legs.map(l =>
+      l.gameId === legGameId ? { ...l, status: won ? 'won' : 'lost', result } : l
+    );
+
+    const anyLost = legs.some(l => l.status === 'lost');
+    const allWon = legs.every(l => l.status === 'won');
+    const newStatus = anyLost ? 'lost' : allWon ? 'won' : 'pending';
+
+    const update = { legs };
+    if (newStatus !== 'pending') {
+      update.status = newStatus;
+      update.settled_at = new Date().toISOString();
+    }
+
+    await db().from('parlays').update(update).eq('id', parlayId);
+
+    if (newStatus === 'won') await this.updateBalance(row.user_phone, parlay.potentialWin);
+
+    const newBalance = newStatus !== 'pending' ? await this.getBalance(row.user_phone) : null;
+
+    return {
+      parlay: { ...parlay, legs, status: newStatus },
+      settled: newStatus !== 'pending',
+      won: newStatus === 'won',
+      newBalance
+    };
+  }
+
+  _mapParlay(p) {
+    return {
+      id: p.id,
+      userPhone: p.user_phone,
+      legs: p.legs || [],
+      combinedOdds: parseFloat(p.combined_odds),
+      amount: parseFloat(p.amount),
+      potentialWin: parseFloat(p.potential_win),
+      status: p.status,
+      createdAt: p.created_at,
+      settledAt: p.settled_at,
+      cancelledAt: p.cancelled_at
+    };
+  }
+
   // --- Admin methods ---
 
   async getAllUsers() {

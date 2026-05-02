@@ -51,6 +51,8 @@ class BotController {
       return this.showSportsList(from);
     if (['cancelar', 'cancel'].includes(word))
       return this.showPendingBetsToCancel(from);
+    if (['parlay', 'combinada'].includes(word))
+      return this.showParlayOptions(from);
 
     // Todo lo demás: búsqueda inteligente + AI
     const searchResult = await this.tryGameSearch(from, text, lowerText);
@@ -102,6 +104,14 @@ class BotController {
     // Montos de apuesta
     if (responseId === 'amount_custom') return this.askCustomAmount(from);
     if (responseId.startsWith('amount_')) return this.selectBetAmount(from, responseId);
+
+    // Parlay
+    if (responseId === 'parlay_mode_ai') return this.startParlayAIMode(from);
+    if (responseId === 'parlay_mode_manual') return this.startParlayManualMode(from);
+    if (responseId.startsWith('parlay_pick_')) return this.handleParlayPick(from, responseId);
+    if (responseId.startsWith('parlay_amount_')) return this.handleParlayAmountSelect(from, responseId);
+    if (responseId === 'parlay_confirm') return this.confirmParlay(from);
+    if (responseId === 'parlay_cancel') return this.cancelParlayProcess(from);
 
     // Confirmación de apuesta
     if (responseId.startsWith('confirm_')) return this.confirmBet(from);
@@ -586,12 +596,34 @@ class BotController {
    * Manejar respuesta según estado
    */
   async handleStateResponse(from, text, state) {
+    const word = text.toLowerCase().trim().replace(/[¿?!¡.,]/g, '');
+    if (['cancelar', 'cancel', 'salir'].includes(word) && state.type.startsWith('parlay')) {
+      userStates.delete(from);
+      return whatsappService.sendText(from, '❌ Parlay cancelado.\n\nEscribe *menu* para ver las opciones.');
+    }
+
     if (state.type === 'awaiting_client_id') {
       return this.verifyClientId(from, text);
     }
 
     if (state.type === 'betting' && state.awaitingCustomAmount) {
       return this.handleCustomAmount(from, text);
+    }
+
+    if (state.type === 'parlay_awaiting_goal') {
+      return this.handleParlayGoal(from, text);
+    }
+
+    if (state.type === 'parlay_awaiting_teams') {
+      return this.handleParlayTeamsText(from, text);
+    }
+
+    if (state.type === 'parlay_building' && state.awaitingCustomAmount) {
+      return this.handleParlayCustomAmount(from, text);
+    }
+
+    if (state.type === 'parlay_building') {
+      return whatsappService.sendText(from, 'Por favor selecciona una opción de la lista, o escribe *cancelar* para salir.');
     }
 
     userStates.delete(from);
@@ -681,6 +713,10 @@ class BotController {
    * Retorna null si no hay coincidencia (para que provideGuidance tome el control).
    */
   async tryGameSearch(from, text, lowerText) {
+    // 0. Parlay detection (antes de cualquier otra búsqueda)
+    const parlayResult = await this.tryParlayIntent(from, text, lowerText);
+    if (parlayResult !== null) return parlayResult;
+
     // 1. Keyword matching rápido (sin costo de API)
     const games = await oddsService.searchGames(lowerText);
     if (games.length > 0) return this.showSearchResults(from, games);
@@ -806,6 +842,402 @@ class BotController {
         { title: 'Otras opciones', rows: [{ id: 'show_sports', title: '🔍 Ver otros partidos', description: 'Buscar otro partido' }] }
       ]
     );
+  }
+
+  // === PARLAY ===
+
+  async tryParlayIntent(from, text, lowerText) {
+    const parlayKws = ['parlay', 'combinada', 'apuesta combinada'];
+    if (!parlayKws.some(kw => lowerText.includes(kw))) return null;
+
+    // Extraer montos del mensaje (para modo AI)
+    const amounts = [...text.matchAll(/\$?\s*(\d{1,7}(?:,\d{3})*)/g)]
+      .map(m => parseInt(m[1].replace(/,/g, '')))
+      .filter(n => n >= 10);
+
+    if (amounts.length >= 2) {
+      const amount = Math.min(...amounts);
+      const targetWin = Math.max(...amounts);
+      return this.startParlayAI(from, amount, targetWin);
+    }
+
+    // Extraer equipos del mensaje (para modo manual)
+    const teams = await aiService.parseParlayTeams(text);
+    if (teams.length >= 2) return this.startParlayManual(from, teams);
+
+    return this.showParlayOptions(from);
+  }
+
+  async showParlayOptions(from) {
+    const body = `🎯 *Apuesta Parlay*\n\nCombina varios partidos — las cuotas se multiplican y las ganancias son mayores. Máximo 4 piernas.\n\n¿Cómo quieres armarlo?`;
+    const buttons = [
+      { id: 'parlay_mode_ai', title: '🤖 IA recomienda' },
+      { id: 'parlay_mode_manual', title: '🎯 Yo elijo equipos' }
+    ];
+    return whatsappService.sendButtons(from, body, buttons);
+  }
+
+  async startParlayAIMode(from) {
+    userStates.set(from, { type: 'parlay_awaiting_goal' });
+    return whatsappService.sendText(
+      from,
+      `🤖 *Parlay con IA*\n\nDime cuánto quieres apostar y cuánto quieres ganar.\n\nEj: _apostar $100 ganar $500_`
+    );
+  }
+
+  async startParlayManualMode(from) {
+    userStates.set(from, { type: 'parlay_awaiting_teams' });
+    return whatsappService.sendText(
+      from,
+      `🎯 *Parlay Manual*\n\nDime los equipos que quieres incluir (mínimo 2, máximo 4).\n\nEj: _quiero Lakers, Chivas y Barcelona_`
+    );
+  }
+
+  async handleParlayGoal(from, text) {
+    const amounts = [...text.matchAll(/\$?\s*(\d{1,7}(?:,\d{3})*)/g)]
+      .map(m => parseInt(m[1].replace(/,/g, '')))
+      .filter(n => n >= 10);
+
+    if (amounts.length < 2) {
+      return whatsappService.sendText(from, '❌ Necesito dos montos.\nEj: _apostar $100 ganar $500_');
+    }
+
+    const amount = Math.min(...amounts);
+    const targetWin = Math.max(...amounts);
+    userStates.delete(from);
+    return this.startParlayAI(from, amount, targetWin);
+  }
+
+  async handleParlayTeamsText(from, text) {
+    const teams = await aiService.parseParlayTeams(text);
+    if (teams.length < 2) {
+      return whatsappService.sendText(
+        from,
+        '❌ No reconocí los equipos. Intenta de nuevo.\nEj: _Lakers, Chivas, Barcelona_'
+      );
+    }
+    userStates.delete(from);
+    return this.startParlayManual(from, teams);
+  }
+
+  async startParlayAI(from, amount, targetWin) {
+    await whatsappService.sendText(from, '🔍 Buscando la mejor combinación...');
+
+    const [nba, mlb, liga] = await Promise.all([
+      oddsService.getOrFetchOdds('basketball_nba', 5),
+      oddsService.getOrFetchOdds('baseball_mlb', 5),
+      oddsService.getOrFetchOdds('soccer_mexico_ligamx', 5)
+    ]);
+    const allGames = [...nba, ...mlb, ...liga].filter(g => g.bookmakers?.length > 0);
+
+    if (allGames.length < 2) {
+      return whatsappService.sendText(
+        from,
+        '⏰ No hay suficientes partidos disponibles para armar un parlay en este momento.'
+      );
+    }
+
+    const legs = await aiService.buildParlayCombo(allGames, amount, targetWin);
+
+    if (!legs || legs.length < 2) {
+      return whatsappService.sendText(
+        from,
+        '❌ No pude armar una combinación para ese objetivo.\n\nEscribe *parlay* para intentar de nuevo.'
+      );
+    }
+
+    const enrichedLegs = legs.map(leg => {
+      const game = oddsService.getGameById(leg.gameId);
+      if (!game) return null;
+      const market = game.bookmakers?.[0]?.markets?.find(m => m.key === 'h2h');
+      const outcome = market?.outcomes?.find(o =>
+        o.name.toLowerCase() === leg.team.toLowerCase() ||
+        (leg.team.toLowerCase() === 'empate' && o.name === 'Draw')
+      );
+      if (!outcome) return null;
+      return {
+        gameId: game.id,
+        game: {
+          home_team: game.home_team,
+          away_team: game.away_team,
+          commence_time: game.commence_time,
+          sport_title: game.sport_title,
+          sport_key: game.sport_key
+        },
+        team: outcome.name,
+        odds: outcome.price,
+        status: 'pending',
+        result: null
+      };
+    }).filter(Boolean);
+
+    if (enrichedLegs.length < 2) {
+      return whatsappService.sendText(
+        from,
+        '❌ No pude confirmar las cuotas de la combinación.\n\nEscribe *parlay* para intentar de nuevo.'
+      );
+    }
+
+    const combinedOdds = parseFloat(enrichedLegs.reduce((acc, l) => acc * l.odds, 1).toFixed(2));
+    const potentialWin = Math.round(amount * combinedOdds);
+
+    userStates.set(from, {
+      type: 'parlay_building',
+      legs: enrichedLegs,
+      amount,
+      combinedOdds,
+      potentialWin
+    });
+
+    return this.showParlayConfirmation(from);
+  }
+
+  async startParlayManual(from, teams) {
+    await whatsappService.sendText(from, '🔍 Buscando los partidos...');
+
+    const foundGames = [];
+    const notFound = [];
+
+    for (const team of teams.slice(0, 4)) {
+      const games = await oddsService.searchGames(team);
+      const valid = games.find(g => g.bookmakers?.length > 0 && !foundGames.find(f => f.id === g.id));
+      if (valid) foundGames.push(valid);
+      else notFound.push(team);
+    }
+
+    if (notFound.length > 0) {
+      await whatsappService.sendText(
+        from,
+        `⚠️ No encontré partido disponible para: *${notFound.join(', ')}*`
+      );
+    }
+
+    if (foundGames.length < 2) {
+      return whatsappService.sendText(
+        from,
+        '❌ Necesito al menos 2 partidos para armar un parlay.\n\nEscribe *parlay* para intentar de nuevo.'
+      );
+    }
+
+    userStates.set(from, {
+      type: 'parlay_building',
+      legs: [],
+      pendingGames: foundGames
+    });
+
+    return this.askNextParlayOutcome(from);
+  }
+
+  async askNextParlayOutcome(from) {
+    const state = userStates.get(from);
+    if (!state || state.type !== 'parlay_building') return;
+
+    if (!state.pendingGames || state.pendingGames.length === 0) {
+      return this.askParlayAmount(from);
+    }
+
+    const game = state.pendingGames[0];
+    const market = game.bookmakers?.[0]?.markets?.find(m => m.key === 'h2h');
+
+    if (!market) {
+      state.pendingGames.shift();
+      userStates.set(from, state);
+      return this.askNextParlayOutcome(from);
+    }
+
+    state.currentOutcomes = market.outcomes.map(o => ({
+      gameId: game.id,
+      game: {
+        home_team: game.home_team,
+        away_team: game.away_team,
+        commence_time: game.commence_time,
+        sport_title: game.sport_title,
+        sport_key: game.sport_key
+      },
+      team: o.name,
+      odds: o.price
+    }));
+    userStates.set(from, state);
+
+    const emoji = oddsService.getSportEmoji(game.sport_key);
+    const date = oddsService.formatGameDate(game.commence_time);
+    const body = `${emoji} *${game.home_team}* vs *${game.away_team}*\n📅 ${date}\n\n¿A quién le apuestas?`;
+
+    const rows = market.outcomes.map((o, i) => ({
+      id: `parlay_pick_${i}`,
+      title: o.name === 'Draw' ? 'Empate' : o.name.substring(0, 24),
+      description: `Momio: ${parseFloat(o.price).toFixed(2)}`
+    }));
+
+    return whatsappService.sendList(from, body, 'Seleccionar', [{ title: 'Resultado', rows }]);
+  }
+
+  async handleParlayPick(from, responseId) {
+    const state = userStates.get(from);
+    if (!state || state.type !== 'parlay_building') return;
+
+    const idx = parseInt(responseId.replace('parlay_pick_', ''));
+    const outcome = state.currentOutcomes?.[idx];
+    if (!outcome) return whatsappService.sendText(from, '❌ Opción inválida.');
+
+    state.legs.push({ ...outcome, status: 'pending', result: null });
+    state.pendingGames.shift();
+    delete state.currentOutcomes;
+    userStates.set(from, state);
+
+    const combinedSoFar = parseFloat(state.legs.reduce((acc, l) => acc * l.odds, 1).toFixed(2));
+    let progressMsg = `✅ Agregado: *${outcome.team === 'Draw' ? 'Empate' : outcome.team}* (${outcome.odds})\n\n*Tu parlay:*\n`;
+    state.legs.forEach((l, i) => {
+      progressMsg += `${i + 1}. ${l.game.home_team} vs ${l.game.away_team} → ${l.team === 'Draw' ? 'Empate' : l.team} (${l.odds})\n`;
+    });
+    progressMsg += `\nCuota combinada: *${combinedSoFar}x*`;
+
+    await whatsappService.sendText(from, progressMsg);
+
+    if (state.legs.length >= 4 || state.pendingGames.length === 0) {
+      delete state.pendingGames;
+      userStates.set(from, state);
+      return this.askParlayAmount(from);
+    }
+
+    return this.askNextParlayOutcome(from);
+  }
+
+  async askParlayAmount(from) {
+    const state = userStates.get(from);
+    const combinedOdds = parseFloat(state.legs.reduce((acc, l) => acc * l.odds, 1).toFixed(2));
+
+    const rows = [200, 500, 1000].map(n => ({
+      id: `parlay_amount_${n}`,
+      title: `$${n.toLocaleString('es-MX')}`,
+      description: `Ganarías: $${Math.round(n * combinedOdds).toLocaleString('es-MX')}`
+    }));
+    rows.push({ id: 'parlay_amount_custom', title: '✏️ Otro monto', description: 'Escribe el monto' });
+
+    state.awaitingAmount = true;
+    userStates.set(from, state);
+
+    return whatsappService.sendList(
+      from,
+      `💵 ¿Cuánto quieres apostar?\n\nCuota combinada: *${combinedOdds}x*`,
+      'Seleccionar',
+      [{ title: 'Montos', rows }]
+    );
+  }
+
+  async handleParlayAmountSelect(from, responseId) {
+    const state = userStates.get(from);
+    if (!state || state.type !== 'parlay_building') return;
+
+    if (responseId === 'parlay_amount_custom') {
+      state.awaitingCustomAmount = true;
+      userStates.set(from, state);
+      return whatsappService.sendText(from, '💵 Escribe el monto a apostar:');
+    }
+
+    const amount = parseInt(responseId.replace('parlay_amount_', ''));
+    return this.setParlayAmount(from, amount);
+  }
+
+  async handleParlayCustomAmount(from, text) {
+    const amount = parseInt(text.trim().replace(/[$,\s]/g, ''));
+    if (isNaN(amount) || amount <= 0) {
+      return whatsappService.sendText(from, '❌ Monto inválido. Escribe solo números (ej: 350)');
+    }
+    return this.setParlayAmount(from, amount);
+  }
+
+  async setParlayAmount(from, amount) {
+    const state = userStates.get(from);
+    const combinedOdds = parseFloat(state.legs.reduce((acc, l) => acc * l.odds, 1).toFixed(2));
+    state.amount = amount;
+    state.combinedOdds = combinedOdds;
+    state.potentialWin = Math.round(amount * combinedOdds);
+    delete state.awaitingAmount;
+    delete state.awaitingCustomAmount;
+    userStates.set(from, state);
+    return this.showParlayConfirmation(from);
+  }
+
+  async showParlayConfirmation(from) {
+    const state = userStates.get(from);
+    if (!state || state.type !== 'parlay_building') return;
+
+    const balance = await strendusAPI.getBalance(from);
+
+    if (state.amount > balance) {
+      userStates.delete(from);
+      return whatsappService.sendText(
+        from,
+        `❌ Saldo insuficiente.\n\nTu saldo actual es $${balance.toLocaleString('es-MX')} MXN`
+      );
+    }
+
+    let msg = `🎯 *Confirmación de Parlay*\n\n`;
+    state.legs.forEach((l, i) => {
+      const emoji = oddsService.getSportEmoji(l.game.sport_key || '');
+      msg += `${i + 1}. ${emoji} ${l.game.home_team} vs ${l.game.away_team}\n`;
+      msg += `   → ${l.team === 'Draw' ? 'Empate' : l.team} (${l.odds})\n\n`;
+    });
+    msg += `Cuota combinada: *${state.combinedOdds}x*\n`;
+    msg += `Monto: *$${state.amount.toLocaleString('es-MX')}*\n`;
+    msg += `Ganancia potencial: *$${state.potentialWin.toLocaleString('es-MX')}*\n\n`;
+    msg += `Saldo disponible: $${balance.toLocaleString('es-MX')} MXN`;
+
+    const buttons = [
+      { id: 'parlay_confirm', title: '✅ Confirmar' },
+      { id: 'parlay_cancel', title: '❌ Cancelar' }
+    ];
+
+    return whatsappService.sendButtons(from, msg, buttons);
+  }
+
+  async confirmParlay(from) {
+    const state = userStates.get(from);
+    if (!state || state.type !== 'parlay_building') {
+      return whatsappService.sendText(from, '❌ Sesión expirada.');
+    }
+
+    for (const leg of state.legs) {
+      const canBet = oddsService.canBetOnGame(leg.gameId);
+      if (!canBet.canBet) {
+        userStates.delete(from);
+        return whatsappService.sendText(
+          from,
+          `❌ ${leg.game.home_team} vs ${leg.game.away_team} ya no acepta apuestas.\n${canBet.reason}`
+        );
+      }
+    }
+
+    const result = await strendusAPI.createParlay(from, {
+      legs: state.legs,
+      combinedOdds: state.combinedOdds,
+      amount: state.amount,
+      potentialWin: state.potentialWin
+    });
+
+    userStates.delete(from);
+
+    if (!result.success) {
+      return whatsappService.sendText(from, `❌ ${result.message}`);
+    }
+
+    let msg = `🎉 ¡Parlay registrado!\n\n`;
+    state.legs.forEach((l, i) => {
+      msg += `${i + 1}. ${l.game.home_team} vs ${l.game.away_team} → ${l.team === 'Draw' ? 'Empate' : l.team}\n`;
+    });
+    msg += `\nCuota combinada: ${state.combinedOdds}x\n`;
+    msg += `Monto: $${state.amount.toLocaleString('es-MX')}\n`;
+    msg += `Ganancia potencial: $${state.potentialWin.toLocaleString('es-MX')}\n\n`;
+    msg += `💰 Saldo actual: $${result.newBalance.toLocaleString('es-MX')} MXN\n\n`;
+    msg += `¡Mucha suerte! 🤞`;
+
+    return whatsappService.sendText(from, msg);
+  }
+
+  async cancelParlayProcess(from) {
+    userStates.delete(from);
+    return whatsappService.sendText(from, '❌ Parlay cancelado.\n\nEscribe *menu* para ver las opciones.');
   }
 
   // === HELPERS PARA TRIGGERS ===
