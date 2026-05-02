@@ -30,7 +30,7 @@ Deportes disponibles:
 
 Analiza el mensaje y responde ÚNICAMENTE con JSON válido, sin markdown:
 {
-  "intent": "search_game" | "recommend" | "chat",
+  "intent": "search_game" | "recommend" | "history" | "chat",
   "sport": "basketball_nba" | "baseball_mlb" | "soccer_mexico_ligamx" | null,
   "team": "nombre del equipo si se menciona, si no null",
   "response": "respuesta natural en español solo si intent es chat, si no null"
@@ -39,6 +39,7 @@ Analiza el mensaje y responde ÚNICAMENTE con JSON válido, sin markdown:
 Reglas:
 - "search_game": el usuario pregunta por un partido, equipo o deporte específico
 - "recommend": quiere sugerencias de qué apostar sin equipo específico
+- "history": quiere ver su historial de apuestas, apuestas anteriores, mis apuestas, qué aposté
 - "chat": mensaje social o conversacional (gracias, hola, qué tal, etc.) — genera una respuesta corta, natural y amigable en español mexicano. No menciones comandos ni menú.`
         },
         { role: 'user', content: message }

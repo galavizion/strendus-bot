@@ -67,31 +67,24 @@ class ResultsService {
    */
   async processBet(bet) {
     try {
-      // Obtener resultado del partido
-      const result = await oddsService.getGameResult(bet.gameId);
+      const result = await oddsService.getGameResult(bet.gameId, bet.game);
 
-      if (!result || !result.completed) {
-        // Partido aún no termina
-        return;
-      }
+      if (!result || !result.completed) return;
 
-      // Determinar si ganó o perdió
       const won = result.winner === bet.team;
 
-      // Actualizar apuesta en el sistema
-      const updateResult = strendusAPI.updateBetResult(
+      const updateResult = await strendusAPI.updateBetResult(
         bet.userPhone,
         bet.id,
         won,
         result
       );
 
-      if (!updateResult.success) {
+      if (!updateResult || !updateResult.success) {
         console.error(`❌ Error actualizando apuesta ${bet.id}`);
         return;
       }
 
-      // Enviar notificación al usuario
       await this.notifyUser(bet, won, result, updateResult.newBalance);
 
       console.log(`✅ Apuesta ${bet.id} procesada: ${won ? 'GANADA' : 'PERDIDA'}`);
@@ -134,7 +127,7 @@ class ResultsService {
       for (const leg of parlay.legs) {
         if (leg.status !== 'pending') continue;
 
-        const result = await oddsService.getGameResult(leg.gameId);
+        const result = await oddsService.getGameResult(leg.gameId, leg.game);
         if (!result || !result.completed) continue;
 
         const won = result.winner === leg.team;

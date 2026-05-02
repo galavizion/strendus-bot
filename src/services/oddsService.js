@@ -243,16 +243,23 @@ class OddsService {
     return { canBet: true };
   }
 
+  sportKeyFromTitle(sportTitle) {
+    const map = { 'NBA': 'basketball_nba', 'MLB': 'baseball_mlb', 'Liga MX': 'soccer_mexico_ligamx' };
+    return map[sportTitle] || null;
+  }
+
   /**
-   * Obtener resultado de un partido
+   * Obtener resultado de un partido.
+   * fallbackGame: objeto game guardado en el bet (usado cuando el partido ya salió del caché)
    */
-  async getGameResult(gameId) {
+  async getGameResult(gameId, fallbackGame = null) {
     try {
-      const game = this.getGameById(gameId);
-      if (!game) return null;
+      const game = this.getGameById(gameId) || fallbackGame;
+      const sportKey = game?.sport_key || this.sportKeyFromTitle(game?.sport_title);
+      if (!game || !sportKey) return null;
 
       // Consultar resultado desde Odds API (si está disponible)
-      const response = await axios.get(`${ODDS_BASE_URL}/sports/${game.sport_key}/scores/`, {
+      const response = await axios.get(`${ODDS_BASE_URL}/sports/${sportKey}/scores/`, {
         params: {
           apiKey: ODDS_API_KEY,
           daysFrom: 1

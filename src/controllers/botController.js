@@ -388,7 +388,8 @@ class BotController {
         home_team: state.game.home_team,
         away_team: state.game.away_team,
         commence_time: state.game.commence_time,
-        sport_title: state.game.sport_title
+        sport_title: state.game.sport_title,
+        sport_key: state.game.sport_key
       },
       team: state.team,
       odds: state.odds,
@@ -717,6 +718,16 @@ class BotController {
     const parlayResult = await this.tryParlayIntent(from, text, lowerText);
     if (parlayResult !== null) return parlayResult;
 
+    // 0b. Historial en frases naturales
+    if (
+      lowerText.includes('historial') ||
+      (lowerText.includes('apuest') && /\b(ver|mis|cuales|anteriores|pasadas)\b/.test(lowerText))
+    ) return this.showBetHistory(from);
+
+    // 0c. Saldo en frases naturales
+    if (lowerText.includes('saldo') || lowerText.includes('cuanto tengo') || lowerText.includes('cuánto tengo'))
+      return this.askBalanceConfirmation(from);
+
     // 1. Keyword matching rápido (sin costo de API)
     const games = await oddsService.searchGames(lowerText);
     if (games.length > 0) return this.showSearchResults(from, games);
@@ -740,6 +751,7 @@ class BotController {
     }
 
     if (intent.intent === 'recommend') return this.showRecommendations(from);
+    if (intent.intent === 'history') return this.showBetHistory(from);
 
     if (intent.intent === 'search_game') {
       // Si mencionó equipo específico, busca por ese equipo
