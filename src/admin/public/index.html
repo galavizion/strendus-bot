@@ -600,14 +600,17 @@
         `<strong>${data.total} eventos próximos</strong> &nbsp;•&nbsp; ${oddsNote}`;
 
       window._gamesMap = {};
+      const now = new Date();
       let html = '';
       Object.entries(SPORTS_META).forEach(([key, sport]) => {
-        const events = (data.events || []).filter(g => g.sport_key === key);
-        const now = new Date();
+        const allEvents = (data.events || []).filter(g => g.sport_key === key);
+        const events = allEvents.filter(g => new Date(g.commence_time) > now);
+        const pastCount = allEvents.length - events.length;
 
         let tableHtml = '';
         if (events.length === 0) {
-          tableHtml = '<p style="color:var(--muted);padding:8px 0">Sin eventos próximos para este deporte.</p>';
+          const pastNote = pastCount > 0 ? ` (${pastCount} ya iniciado${pastCount !== 1 ? 's' : ''})` : '';
+          tableHtml = `<p style="color:var(--muted);padding:8px 0">Sin eventos próximos para este deporte${pastNote}.</p>`;
         } else {
           const sportHasDraw = key === 'soccer_mexico_ligamx';
           events.forEach(g => { window._gamesMap[g.id] = g; });
@@ -625,10 +628,8 @@
               dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Mexico_City'
             });
             const statusBadge = minutesUntil > 30
-              ? `<span class="badge badge-won">Disponible</span>`
-              : minutesUntil > 0
-                ? `<span class="badge badge-pending">Cierra pronto</span>`
-                : `<span class="badge badge-cancelled">Iniciado</span>`;
+              ? `<span class="badge badge-won">Disponible (+30 min)</span>`
+              : `<span class="badge badge-pending">Cierra pronto</span>`;
             const drawTd = sportHasDraw ? oCell('drawOdds', drawOdds) : '';
             return `<tr data-game-id="${esc(g.id)}">
               <td><strong>${esc(g.home_team)}</strong></td>
@@ -641,6 +642,9 @@
             </tr>`;
           }).join('');
 
+          const pastNote = pastCount > 0
+            ? `<p style="font-size:12px;color:var(--muted);margin-top:8px">+ ${pastCount} partido${pastCount !== 1 ? 's' : ''} ya iniciado${pastCount !== 1 ? 's' : ''}, no se muestran.</p>`
+            : '';
           const drawHeader = sportHasDraw ? '<th style="text-align:center">Empate</th>' : '';
           tableHtml = `<div style="overflow-x:auto"><table>
             <thead><tr>
@@ -650,7 +654,7 @@
               <th>Fecha (CDMX)</th><th>Estado</th>
             </tr></thead>
             <tbody>${rows}</tbody>
-          </table></div>`;
+          </table></div>${pastNote}`;
         }
 
         html += `<div class="card">

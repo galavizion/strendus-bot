@@ -77,23 +77,25 @@ class OddsService {
   async fetchAllOdds() {
     try {
       console.log('🔄 Actualizando momios desde Odds API...');
-      
-      const promises = Object.values(SPORTS).map(sport => 
-        this.fetchSportOdds(sport)
-      );
 
+      const promises = Object.values(SPORTS).map(sport => this.fetchSportOdds(sport));
       const results = await Promise.all(promises);
       const allGames = results.flat();
 
+      const now = new Date();
       this.cache.games = allGames;
-      this.cache.lastUpdate = new Date();
+      this.cache.lastUpdate = now;
+
+      // Sync per-sport TTL so getOrFetchOdds uses this data for the next 4 hours
+      Object.values(SPORTS).forEach(sportKey => {
+        this.oddsCache[sportKey] = { lastUpdate: now };
+      });
 
       console.log(`✅ Momios actualizados: ${allGames.length} partidos`);
-      
       return allGames;
     } catch (error) {
       console.error('❌ Error actualizando momios:', error.message);
-      return this.cache.games; // Devolver cache si falla
+      return this.cache.games;
     }
   }
 
@@ -195,12 +197,11 @@ class OddsService {
    * Obtener partidos disponibles para apostar (>30 min)
    */
   getAvailableGames(sportKey = null, limit = 3) {
-    const now = new Date();
-    const minTime = new Date(now.getTime() + 30 * 60 * 1000); // +30 minutos
+    const minTimeMs = Date.now() + 30 * 60 * 1000; // +30 min in ms, unambiguous
 
     let games = this.cache.games.filter(game => {
-      const gameTime = new Date(game.commence_time);
-      return gameTime > minTime;
+      const t = new Date(game.commence_time).getTime();
+      return !isNaN(t) && t > minTimeMs;
     });
 
     if (sportKey) {
@@ -228,14 +229,14 @@ class OddsService {
     const game = this.getGameById(gameId);
     if (!game) return { canBet: false, reason: 'Partido no encontrado' };
 
-    const now = new Date();
-    const gameTime = new Date(game.commence_time);
-    const minutesUntilGame = (gameTime - now) / 1000 / 60;
+    const minutesUntilGame = (new Date(game.commence_time).getTime() - Date.now()) / 60000;
 
     if (minutesUntilGame < 20) {
-      return { 
-        canBet: false, 
-        reason: `El partido inicia en ${Math.round(minutesUntilGame)} minutos. No se permiten apuestas.`
+      return {
+        canBet: false,
+        reason: minutesUntilGame <= 0
+          ? 'Este partido ya inició. No se permiten apuestas.'
+          : `El partido inicia en ${Math.round(minutesUntilGame)} minutos. No se permiten apuestas.`
       };
     }
 

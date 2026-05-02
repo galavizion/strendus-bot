@@ -108,8 +108,8 @@ class BotController {
     if (responseId.startsWith('bet_')) return this.selectBetTeam(from, responseId);
 
     // Montos de apuesta
-    if (responseId.startsWith('amount_')) return this.selectBetAmount(from, responseId);
     if (responseId === 'amount_custom') return this.askCustomAmount(from);
+    if (responseId.startsWith('amount_')) return this.selectBetAmount(from, responseId);
 
     // Confirmación de apuesta
     if (responseId.startsWith('confirm_')) return this.confirmBet(from);
