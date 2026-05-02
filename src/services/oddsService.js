@@ -61,14 +61,28 @@ class OddsService {
   }
 
   withManualOdds(game) {
+    // 1. Manual odds tienen prioridad
     const manual = this.manualOdds[game.id];
-    if (!manual || game.bookmakers?.length > 0) return game;
+    if (manual) {
+      const outcomes = [
+        { name: game.home_team, price: manual.homeOdds },
+        { name: game.away_team, price: manual.awayOdds }
+      ];
+      if (manual.drawOdds) outcomes.push({ name: 'Draw', price: manual.drawOdds });
+      return { ...game, bookmakers: [{ key: 'manual', title: 'Manual', markets: [{ key: 'h2h', outcomes }] }] };
+    }
+
+    // 2. API tiene momios
+    if (game.bookmakers?.length > 0) return game;
+
+    // 3. Default: local 1.2 / visitante 2.6 / empate 3.2 (solo fútbol)
+    const isSoccer = game.sport_key?.startsWith('soccer_');
     const outcomes = [
-      { name: game.home_team, price: manual.homeOdds },
-      { name: game.away_team, price: manual.awayOdds }
+      { name: game.home_team, price: 1.2 },
+      { name: game.away_team, price: 2.6 }
     ];
-    if (manual.drawOdds) outcomes.push({ name: 'Draw', price: manual.drawOdds });
-    return { ...game, bookmakers: [{ key: 'manual', title: 'Manual', markets: [{ key: 'h2h', outcomes }] }] };
+    if (isSoccer) outcomes.push({ name: 'Draw', price: 3.2 });
+    return { ...game, bookmakers: [{ key: 'default', title: 'Default', markets: [{ key: 'h2h', outcomes }] }] };
   }
 
   /**
@@ -127,8 +141,11 @@ class OddsService {
     } catch (error) {
       const status = error.response?.status;
       const msg = error.response?.data?.message || error.message;
-      if (status === 422) {
-        console.error(`❌ Odds API QUOTA AGOTADA (422): ${msg}`);
+      const isQuota = status === 422 || (status === 401 && msg?.toLowerCase().includes('quota'));
+
+      if (isQuota) {
+        console.error(`❌ Odds API CUOTA AGOTADA (${status}) — usando eventos sin momios como fallback`);
+        return this.fetchSportEvents(sportKey);
       } else if (status === 401) {
         console.error(`❌ Odds API KEY INVÁLIDA (401): ${msg}`);
       } else {
