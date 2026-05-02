@@ -695,8 +695,13 @@ class BotController {
     if (isReco) return this.showRecommendations(from);
 
     // 3. IA como fallback: entiende lenguaje libre que no matcheó keywords
-    const intent = await aiService.parseIntent(text);
-    if (!intent || intent.intent === 'none') return null;
+    const userName = strendusAPI.getUserInfo(from)?.name || null;
+    const intent = await aiService.parseIntent(text, userName);
+    if (!intent) return null;
+
+    if (intent.intent === 'chat' && intent.response) {
+      return whatsappService.sendText(from, intent.response);
+    }
 
     if (intent.intent === 'recommend') return this.showRecommendations(from);
 

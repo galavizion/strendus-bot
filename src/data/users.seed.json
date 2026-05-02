@@ -5,9 +5,22 @@
       "phone": "+5218181817006",
       "name": "Rene Galaviz",
       "email": "rene.galaviz@gmail.com",
-      "balance": 15000,
+      "balance": 14650,
       "registeredAt": "2026-01-05T00:00:00Z",
-      "bets": []
+      "bets": [
+        {
+          "id": "BET-001",
+          "gameId": "tigres-guadalajara-20260502",
+          "game": { "home_team": "Tigres", "away_team": "Guadalajara", "sport_title": "Liga MX" },
+          "team": "Draw",
+          "odds": 3.5,
+          "amount": 350,
+          "potentialWin": 1225,
+          "status": "pending",
+          "createdAt": "2026-05-01T20:30:00Z",
+          "result": null
+        }
+      ]
     },
     {
       "clientId": "STR001",

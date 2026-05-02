@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const USERS_FILE = path.join(__dirname, '../data/users.json');
+const USERS_SEED  = path.join(__dirname, '../data/users.seed.json');
 
 class StrendusAPIService {
   constructor() {
@@ -9,10 +10,19 @@ class StrendusAPIService {
   }
 
   /**
-   * Cargar usuarios desde el archivo JSON
+   * Cargar usuarios desde el archivo JSON.
+   * Si no existe, copia el seed (datos iniciales) y lo crea.
    */
   loadUsers() {
     try {
+      if (!fs.existsSync(USERS_FILE)) {
+        const seed = fs.existsSync(USERS_SEED)
+          ? fs.readFileSync(USERS_SEED, 'utf8')
+          : JSON.stringify({ users: [] });
+        fs.mkdirSync(path.dirname(USERS_FILE), { recursive: true });
+        fs.writeFileSync(USERS_FILE, seed);
+        console.log('📋 users.json creado desde seed.');
+      }
       const data = fs.readFileSync(USERS_FILE, 'utf8');
       this.usersData = JSON.parse(data);
     } catch (error) {
