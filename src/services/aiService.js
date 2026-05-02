@@ -1,6 +1,10 @@
 const OpenAI = require('openai');
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let _client = null;
+function getClient() {
+  if (!_client) _client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return _client;
+}
 
 /**
  * Parsea la intención del usuario usando GPT.
@@ -11,7 +15,7 @@ async function parseIntent(message) {
   if (!process.env.OPENAI_API_KEY) return null;
 
   try {
-    const response = await client.chat.completions.create({
+    const response = await getClient().chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         {
