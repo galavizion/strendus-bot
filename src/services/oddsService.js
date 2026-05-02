@@ -329,6 +329,51 @@ class OddsService {
     return emojis[sportKey] || '🎯';
   }
 
+  normalizeStr(str) {
+    return String(str).toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * Búsqueda de partidos por nombre de equipo o deporte.
+   * Retorna [] si no hay coincidencias.
+   */
+  searchGames(query) {
+    const q = this.normalizeStr(query);
+    const minTimeMs = Date.now() + 30 * 60 * 1000;
+
+    // Sport keyword → return available games for that sport
+    const sportAliases = [
+      { keys: ['nba', 'basket', 'basquetbol', 'basquet'], sport: 'basketball_nba' },
+      { keys: ['mlb', 'beisbol', 'bisbol', 'baseball'], sport: 'baseball_mlb' },
+      { keys: ['ligamx', 'liga mx', 'liguilla', 'tigres', 'chivas', 'america', 'pumas', 'cruz azul', 'monterrey', 'toluca', 'leon', 'atlas', 'necaxa', 'santos', 'puebla', 'queretaro', 'tijuana'], sport: 'soccer_mexico_ligamx' },
+      { keys: ['soccer', 'futbol', 'futsal', 'liga'], sport: 'soccer_mexico_ligamx' }
+    ];
+    for (const { keys, sport } of sportAliases) {
+      if (keys.some(k => q.includes(k.replace(' ', '')))) {
+        return this.getAvailableGames(sport, 5);
+      }
+    }
+
+    // Team name search — match words with 4+ chars against team names
+    const words = q.split(' ').filter(w => w.length >= 4);
+    if (words.length === 0) return [];
+
+    const matches = this.cache.games.filter(game => {
+      const t = new Date(game.commence_time).getTime();
+      if (isNaN(t) || t <= minTimeMs) return false;
+      const home = this.normalizeStr(game.home_team);
+      const away = this.normalizeStr(game.away_team);
+      return words.some(w => home.includes(w) || away.includes(w));
+    });
+
+    matches.sort((a, b) => new Date(a.commence_time) - new Date(b.commence_time));
+    return matches.slice(0, 5).map(g => this.withManualOdds(g));
+  }
+
   /**
    * Obtener estadísticas de uso de la API
    */

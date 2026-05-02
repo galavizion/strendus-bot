@@ -66,6 +66,10 @@ class BotController {
       return this.showPendingBetsToCancel(from);
     }
 
+    // Búsqueda inteligente: equipo, deporte o pregunta de recomendación
+    const searchResult = await this.tryGameSearch(from, text, lowerText);
+    if (searchResult !== null) return searchResult;
+
     // Respuesta educativa
     return this.provideGuidance(from, lowerText);
   }
@@ -681,6 +685,69 @@ class BotController {
     }
 
     return this.showMainMenu(from);
+  }
+
+  /**
+   * Búsqueda inteligente: si el texto menciona un equipo o deporte, muestra
+   * los partidos directamente. Si pregunta qué apostar, recomienda opciones.
+   * Retorna null si no hay coincidencia (para que provideGuidance tome el control).
+   */
+  async tryGameSearch(from, text, lowerText) {
+    // 1. Búsqueda por equipo o deporte
+    const games = oddsService.searchGames(lowerText);
+    if (games.length > 0) return this.showSearchResults(from, games);
+
+    // 2. Pregunta de recomendación: "en qué puedo apostar", "tengo X pesos", etc.
+    const isReco =
+      /\d+\s*(pesos?|mxn)/i.test(text) && lowerText.includes('apostar') ||
+      ['en que puedo apostar', 'en que apostar', 'que puedo apostar', 'donde apuesto',
+       'que hay para apostar', 'hay algo para apostar', 'recomienda', 'recomiendame']
+        .some(p => lowerText.includes(p));
+
+    if (isReco) {
+      const all = [
+        ...oddsService.getAvailableGames('basketball_nba', 2),
+        ...oddsService.getAvailableGames('baseball_mlb', 2),
+        ...oddsService.getAvailableGames('soccer_mexico_ligamx', 2)
+      ].filter(g => g.bookmakers?.length > 0);
+
+      if (all.length === 0) {
+        return whatsappService.sendText(
+          from,
+          '⏰ No hay partidos con momios disponibles en este momento.\n\nEscribe *momios* para ver todas las opciones.'
+        );
+      }
+      return this.showSearchResults(from, all);
+    }
+
+    return null;
+  }
+
+  /**
+   * Muestra los resultados de búsqueda como lista o va directo si hay uno solo.
+   */
+  async showSearchResults(from, games) {
+    if (games.length === 1) {
+      return this.showGameBetting(from, `game_${games[0].id}`);
+    }
+
+    const rows = games.slice(0, 10).map(game => {
+      const emoji = oddsService.getSportEmoji(game.sport_key);
+      const date = whatsappService.formatGameDate(game.commence_time);
+      const noOdds = game.bookmakers?.length > 0 ? '' : ' ⚠️';
+      return {
+        id: `game_${game.id}`,
+        title: `${emoji} ${game.home_team} vs ${game.away_team}`.substring(0, 24),
+        description: date + noOdds
+      };
+    });
+
+    return whatsappService.sendList(
+      from,
+      `Encontré ${games.length} partido${games.length > 1 ? 's' : ''} disponible${games.length > 1 ? 's' : ''}:\n\n¿En cuál quieres apostar?`,
+      whatsappService.getListButton('games'),
+      [{ title: 'Partidos', rows }]
+    );
   }
 
   // === HELPERS PARA TRIGGERS ===
