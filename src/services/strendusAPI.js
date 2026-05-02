@@ -220,15 +220,25 @@ class StrendusAPIService {
   // --- Admin methods ---
 
   async getAllUsers() {
-    const { data } = await db().from('users').select('*').order('registered_at', { ascending: false });
-    return (data || []).map(u => ({
+    const [{ data: users }, { data: allBets }] = await Promise.all([
+      db().from('users').select('*').order('registered_at', { ascending: false }),
+      db().from('bets').select('*').order('created_at', { ascending: false })
+    ]);
+
+    const betsByPhone = {};
+    (allBets || []).forEach(b => {
+      if (!betsByPhone[b.user_phone]) betsByPhone[b.user_phone] = [];
+      betsByPhone[b.user_phone].push(this._mapBet(b));
+    });
+
+    return (users || []).map(u => ({
       clientId: u.client_id,
       phone: u.phone,
       name: u.name,
       email: u.email,
       balance: u.balance,
       registeredAt: u.registered_at,
-      bets: []
+      bets: betsByPhone[u.phone] || []
     }));
   }
 

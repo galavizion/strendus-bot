@@ -147,6 +147,31 @@
       .config-row { grid-template-columns: 1fr; }
       main { padding: 0 16px; }
     }
+
+    /* User detail drawer */
+    #user-drawer {
+      position: fixed; top: 0; right: -520px; width: 520px; height: 100vh;
+      background: white; box-shadow: -4px 0 24px rgba(0,0,0,.18);
+      transition: right .28s ease; z-index: 500; display: flex; flex-direction: column;
+    }
+    #user-drawer.open { right: 0; }
+    #drawer-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.35);
+      z-index: 499; display: none;
+    }
+    #drawer-overlay.open { display: block; }
+    .drawer-header {
+      padding: 20px 24px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .drawer-header h3 { font-size: 17px; }
+    .drawer-close { font-size: 22px; cursor: pointer; color: var(--muted); border: none; background: none; }
+    .drawer-meta { padding: 16px 24px; background: var(--bg); display: flex; gap: 24px; flex-wrap: wrap; }
+    .drawer-meta-item { font-size: 13px; }
+    .drawer-meta-item .label { color: var(--muted); margin-bottom: 2px; }
+    .drawer-meta-item .value { font-weight: 600; font-size: 15px; }
+    .drawer-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
+    .drawer-body h4 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 12px; }
   </style>
 </head>
 <body>
@@ -488,7 +513,10 @@
             ${lost > 0 ? '<span class="badge badge-lost">'+lost+' perd</span>' : ''}
           </td>
           <td style="font-size:12px;color:var(--muted)">${date}</td>
-          <td><button class="btn btn-sm btn-danger" onclick="deleteUser('${esc(u.phone)}', '${esc(u.name)}')">Eliminar</button></td>
+          <td style="display:flex;gap:6px">
+            <button class="btn btn-sm btn-outline" onclick="showUserDetail('${esc(u.phone)}', '${esc(u.name)}')">Ver</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteUser('${esc(u.phone)}', '${esc(u.name)}')">Eliminar</button>
+          </td>
         </tr>`;
       }).join('');
 
@@ -886,6 +914,91 @@
   function esc(str) {
     return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
+
+  // ============================================================
+  // USER DETAIL DRAWER
+  // ============================================================
+  async function showUserDetail(phone, name) {
+    document.getElementById('drawer-title').textContent = name;
+    document.getElementById('drawer-body').innerHTML = '<div class="loading">Cargando...</div>';
+    document.getElementById('user-drawer').classList.add('open');
+    document.getElementById('drawer-overlay').classList.add('open');
+
+    try {
+      const [users, bets] = await Promise.all([
+        api('GET', '/users'),
+        api('GET', '/bets?user=' + encodeURIComponent(phone))
+      ]);
+      const u = users.find(x => x.phone === phone) || {};
+
+      const badge = {
+        pending:   '<span class="badge badge-pending">⏳ Pendiente</span>',
+        won:       '<span class="badge badge-won">✅ Ganada</span>',
+        lost:      '<span class="badge badge-lost">❌ Perdida</span>',
+        cancelled: '<span class="badge badge-cancelled">🚫 Cancelada</span>'
+      };
+
+      const totalApostado = bets.reduce((s, b) => s + (b.amount || 0), 0);
+      const ganadas = bets.filter(b => b.status === 'won').length;
+      const pendientes = bets.filter(b => b.status === 'pending').length;
+
+      document.getElementById('drawer-meta').innerHTML = `
+        <div class="drawer-meta-item"><div class="label">Teléfono</div><div class="value" style="font-size:13px;font-family:monospace">${esc(phone)}</div></div>
+        <div class="drawer-meta-item"><div class="label">Saldo</div><div class="value" style="color:var(--success)">$${(u.balance||0).toLocaleString('es-MX')}</div></div>
+        <div class="drawer-meta-item"><div class="label">Total apostado</div><div class="value">$${totalApostado.toLocaleString('es-MX')}</div></div>
+        <div class="drawer-meta-item"><div class="label">Apuestas</div><div class="value">${bets.length} total · ${ganadas} gan · ${pendientes} pend</div></div>
+      `;
+
+      if (bets.length === 0) {
+        document.getElementById('drawer-body').innerHTML = '<div class="empty">Sin apuestas registradas.</div>';
+        return;
+      }
+
+      const rows = bets.map(b => {
+        const game = b.game || {};
+        const date = new Date(b.createdAt).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+        return `<tr>
+          <td style="font-size:12px">${esc(game.home_team||'?')} vs ${esc(game.away_team||'?')}</td>
+          <td>${esc(b.team)}</td>
+          <td>${b.odds}</td>
+          <td>$${(b.amount||0).toLocaleString('es-MX')}</td>
+          <td style="color:var(--success)">$${(b.potentialWin||0).toLocaleString('es-MX')}</td>
+          <td>${badge[b.status] || b.status}</td>
+          <td style="font-size:11px;color:var(--muted)">${date}</td>
+        </tr>`;
+      }).join('');
+
+      document.getElementById('drawer-body').innerHTML = `
+        <h4>Historial de apuestas</h4>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th>Partido</th><th>Apuesta</th><th>Cuota</th>
+              <th>Monto</th><th>Pot.</th><th>Estado</th><th>Fecha</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    } catch (e) {
+      document.getElementById('drawer-body').innerHTML = `<div class="alert alert-error" style="display:block">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function closeDrawer() {
+    document.getElementById('user-drawer').classList.remove('open');
+    document.getElementById('drawer-overlay').classList.remove('open');
+  }
 </script>
+
+<!-- User detail drawer -->
+<div id="drawer-overlay" onclick="closeDrawer()"></div>
+<div id="user-drawer">
+  <div class="drawer-header">
+    <h3 id="drawer-title">Usuario</h3>
+    <button class="drawer-close" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-meta" id="drawer-meta"></div>
+  <div class="drawer-body" id="drawer-body"></div>
+</div>
 </body>
 </html>
