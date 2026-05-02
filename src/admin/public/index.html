@@ -599,6 +599,7 @@
       document.getElementById('api-status').innerHTML =
         `<strong>${data.total} eventos próximos</strong> &nbsp;•&nbsp; ${oddsNote}`;
 
+      window._gamesMap = {};
       let html = '';
       Object.entries(SPORTS_META).forEach(([key, sport]) => {
         const events = (data.events || []).filter(g => g.sport_key === key);
@@ -609,15 +610,15 @@
           tableHtml = '<p style="color:var(--muted);padding:8px 0">Sin eventos próximos para este deporte.</p>';
         } else {
           const sportHasDraw = key === 'soccer_mexico_ligamx';
+          events.forEach(g => { window._gamesMap[g.id] = g; });
+          const oCell = (field, val) =>
+            `<td class="odds-cell" data-field="${field}" data-value="${val ?? ''}" style="text-align:center;cursor:pointer" title="Click para editar" onclick="editCell(this)">${fmtOddsCell(val)}</td>`;
           const rows = events.map(g => {
             const bookmaker = g.bookmakers?.[0];
             const outcomes = bookmaker?.markets?.[0]?.outcomes || [];
-            const homeOdds = outcomes.find(o => o.name === g.home_team)?.price;
-            const awayOdds = outcomes.find(o => o.name === g.away_team)?.price;
-            const drawOdds = outcomes.find(o => o.name === 'Draw')?.price;
-            const fmtOdds = v => v != null
-              ? `<span style="font-weight:700;color:var(--primary)">${v}</span>`
-              : `<span style="color:#cbd5e1">—</span>`;
+            const homeOdds = outcomes.find(o => o.name === g.home_team)?.price ?? null;
+            const awayOdds = outcomes.find(o => o.name === g.away_team)?.price ?? null;
+            const drawOdds = outcomes.find(o => o.name === 'Draw')?.price ?? null;
             const gameTime = new Date(g.commence_time);
             const minutesUntil = Math.round((gameTime - now) / 60000);
             const dateStr = gameTime.toLocaleString('es-MX', {
@@ -628,13 +629,13 @@
               : minutesUntil > 0
                 ? `<span class="badge badge-pending">Cierra pronto</span>`
                 : `<span class="badge badge-cancelled">Iniciado</span>`;
-            const drawCell = sportHasDraw ? `<td style="text-align:center">${fmtOdds(drawOdds)}</td>` : '';
-            return `<tr>
+            const drawTd = sportHasDraw ? oCell('drawOdds', drawOdds) : '';
+            return `<tr data-game-id="${esc(g.id)}">
               <td><strong>${esc(g.home_team)}</strong></td>
               <td>${esc(g.away_team)}</td>
-              <td style="text-align:center">${fmtOdds(homeOdds)}</td>
-              ${drawCell}
-              <td style="text-align:center">${fmtOdds(awayOdds)}</td>
+              ${oCell('homeOdds', homeOdds)}
+              ${drawTd}
+              ${oCell('awayOdds', awayOdds)}
               <td style="font-size:12px;color:var(--muted)">${dateStr}</td>
               <td>${statusBadge}</td>
             </tr>`;
@@ -800,6 +801,69 @@
       showAlert(alertEl, 'success', '✅ Configuración guardada y aplicada al bot.');
     } catch (e) {
       showAlert(alertEl, 'error', 'Error al guardar: ' + e.message);
+    }
+  }
+
+  // ============================================================
+  // ODDS INLINE EDITING
+  // ============================================================
+  function fmtOddsCell(v) {
+    const n = parseFloat(v);
+    return n >= 1.01
+      ? `<span style="font-weight:700;color:var(--primary)">${n}</span>`
+      : `<span style="color:#cbd5e1;font-size:12px">—</span>`;
+  }
+
+  function editCell(td) {
+    if (td.querySelector('input')) return;
+    const prev = td.dataset.value || '';
+    td.innerHTML = `<input type="number" step="0.01" min="1.01" value="${prev}"
+      style="width:65px;padding:3px 6px;border:1.5px solid var(--primary);border-radius:4px;font-size:13px;text-align:center">`;
+    const input = td.querySelector('input');
+    input.focus(); input.select();
+    let done = false;
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { done = true; commitCell(td, input.value, prev); }
+      if (e.key === 'Escape') { done = true; td.innerHTML = fmtOddsCell(parseFloat(prev)||null); td.dataset.value = prev; }
+    });
+    input.addEventListener('blur', () => { if (!done) { done = true; commitCell(td, input.value, prev); } });
+  }
+
+  async function commitCell(td, val, prev) {
+    const num = parseFloat(val);
+    if (!num || num < 1.01) {
+      td.innerHTML = fmtOddsCell(parseFloat(prev)||null);
+      td.dataset.value = prev;
+      return;
+    }
+    td.dataset.value = num;
+    td.innerHTML = fmtOddsCell(num);
+
+    const row = td.closest('tr');
+    const gameId = row.dataset.gameId;
+    const game = (window._gamesMap || {})[gameId];
+    if (!game) return;
+
+    const oddsData = { homeOdds: null, awayOdds: null, drawOdds: null };
+    row.querySelectorAll('.odds-cell').forEach(c => {
+      const v = parseFloat(c.dataset.value);
+      if (v >= 1.01) oddsData[c.dataset.field] = v;
+    });
+
+    if (!oddsData.homeOdds || !oddsData.awayOdds) {
+      // Partial — amber flash, wait for the other cell
+      td.style.background = '#fef3c7';
+      setTimeout(() => { td.style.background = ''; }, 1200);
+      return;
+    }
+
+    try {
+      await api('PATCH', '/games/' + encodeURIComponent(gameId) + '/odds', { ...oddsData, game });
+      td.style.background = '#d1fae5';
+      setTimeout(() => { td.style.background = ''; }, 800);
+    } catch (e) {
+      td.innerHTML = fmtOddsCell(parseFloat(prev)||null);
+      td.dataset.value = prev;
     }
   }
 

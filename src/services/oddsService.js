@@ -4,6 +4,7 @@ const path = require('path');
 
 const ODDS_API_KEY = process.env.ODDS_API_KEY;
 const ODDS_BASE_URL = 'https://api.the-odds-api.com/v4';
+const MANUAL_ODDS_PATH = path.join(__dirname, '../data/manualOdds.json');
 
 // Deportes a consultar
 const SPORTS = {
@@ -21,6 +22,53 @@ class OddsService {
       lastUpdate: null
     };
     this.oddsCache = {}; // per-sport: { sportKey: { lastUpdate: Date } }
+    this.manualOdds = this.loadManualOdds();
+  }
+
+  loadManualOdds() {
+    try { return JSON.parse(fs.readFileSync(MANUAL_ODDS_PATH, 'utf8')); }
+    catch { return {}; }
+  }
+
+  saveManualOdds() {
+    try { fs.writeFileSync(MANUAL_ODDS_PATH, JSON.stringify(this.manualOdds, null, 2)); }
+    catch (e) { console.error('Error guardando momios manuales:', e.message); }
+  }
+
+  setGameOdds(gameData, homeOdds, awayOdds, drawOdds) {
+    const { id, home_team, away_team, sport_key, sport_title, commence_time } = gameData;
+    const outcomes = [
+      { name: home_team, price: parseFloat(homeOdds) },
+      { name: away_team, price: parseFloat(awayOdds) }
+    ];
+    if (drawOdds) outcomes.push({ name: 'Draw', price: parseFloat(drawOdds) });
+    const bookmakers = [{ key: 'manual', title: 'Manual', markets: [{ key: 'h2h', outcomes }] }];
+
+    this.manualOdds[id] = {
+      homeOdds: parseFloat(homeOdds),
+      awayOdds: parseFloat(awayOdds),
+      drawOdds: drawOdds ? parseFloat(drawOdds) : null
+    };
+    this.saveManualOdds();
+
+    const idx = this.cache.games.findIndex(g => g.id === id);
+    if (idx >= 0) {
+      this.cache.games[idx] = { ...this.cache.games[idx], bookmakers };
+    } else {
+      this.cache.games.push({ id, home_team, away_team, sport_key, sport_title, commence_time, bookmakers });
+      if (!this.cache.lastUpdate) this.cache.lastUpdate = new Date();
+    }
+  }
+
+  withManualOdds(game) {
+    const manual = this.manualOdds[game.id];
+    if (!manual || game.bookmakers?.length > 0) return game;
+    const outcomes = [
+      { name: game.home_team, price: manual.homeOdds },
+      { name: game.away_team, price: manual.awayOdds }
+    ];
+    if (manual.drawOdds) outcomes.push({ name: 'Draw', price: manual.drawOdds });
+    return { ...game, bookmakers: [{ key: 'manual', title: 'Manual', markets: [{ key: 'h2h', outcomes }] }] };
   }
 
   /**
@@ -162,14 +210,15 @@ class OddsService {
     // Ordenar por fecha más cercana
     games.sort((a, b) => new Date(a.commence_time) - new Date(b.commence_time));
 
-    return games.slice(0, limit);
+    return games.slice(0, limit).map(g => this.withManualOdds(g));
   }
 
   /**
    * Obtener un partido específico por ID
    */
   getGameById(gameId) {
-    return this.cache.games.find(g => g.id === gameId);
+    const game = this.cache.games.find(g => g.id === gameId);
+    return game ? this.withManualOdds(game) : null;
   }
 
   /**

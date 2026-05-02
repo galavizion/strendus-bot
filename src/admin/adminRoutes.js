@@ -142,6 +142,15 @@ router.get('/api/events', adminAuth, async (req, res) => {
   }
 });
 
+router.patch('/api/games/:gameId/odds', adminAuth, (req, res) => {
+  const { homeOdds, awayOdds, drawOdds, game } = req.body || {};
+  if (!game || !homeOdds || !awayOdds) {
+    return res.status(400).json({ error: 'homeOdds, awayOdds y game son requeridos' });
+  }
+  oddsService.setGameOdds(game, homeOdds, awayOdds, drawOdds || null);
+  res.json({ success: true });
+});
+
 router.post('/api/refresh-odds', adminAuth, async (req, res) => {
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {
