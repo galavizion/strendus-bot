@@ -35,43 +35,27 @@ class BotController {
   async handleTextMessage(from, text) {
     const lowerText = text.toLowerCase().trim();
 
-    // Verificar si hay un estado pendiente
+    // Estado pendiente (captura de monto, cliente ID, etc.)
     const state = userStates.get(from);
+    if (state) return this.handleStateResponse(from, text, state);
 
-    if (state) {
-      return this.handleStateResponse(from, text, state);
-    }
-
-    // Triggers de menú principal
-    if (this.isMenuTrigger(lowerText)) {
+    // Comandos cortos explícitos — solo palabras sueltas, no frases
+    const word = lowerText.replace(/[¿?!¡.,]/g, '').trim();
+    if (['hola', 'menu', 'menú', 'inicio', 'ayuda', 'help', 'opciones'].includes(word))
       return this.showMainMenu(from);
-    }
-
-    // Triggers de saldo
-    if (this.isBalanceTrigger(lowerText)) {
+    if (['saldo', 'balance'].includes(word))
       return this.askBalanceConfirmation(from);
-    }
-
-    // Triggers de historial
-    if (this.isHistoryTrigger(lowerText)) {
+    if (['historial', 'apuestas'].includes(word))
       return this.showBetHistory(from);
-    }
-
-    // Triggers de momios/deportes
-    if (this.isOddsTrigger(lowerText)) {
+    if (['momios', 'deportes', 'partidos'].includes(word))
       return this.showSportsList(from);
-    }
-
-    // Triggers de cancelar apuesta
-    if (this.isCancelBetTrigger(lowerText)) {
+    if (['cancelar', 'cancel'].includes(word))
       return this.showPendingBetsToCancel(from);
-    }
 
-    // Búsqueda inteligente: equipo, deporte o pregunta de recomendación
+    // Todo lo demás: búsqueda inteligente + AI
     const searchResult = await this.tryGameSearch(from, text, lowerText);
     if (searchResult !== null) return searchResult;
 
-    // Respuesta educativa
     return this.provideGuidance(from, lowerText);
   }
 
@@ -822,28 +806,7 @@ class BotController {
   // === HELPERS PARA TRIGGERS ===
 
   isMenuTrigger(text) {
-    const triggers = ['hola', 'menu', 'menú', 'ayuda', 'opciones', 'inicio', 'help', '?'];
-    return triggers.some(t => text.includes(t));
-  }
-
-  isBalanceTrigger(text) {
-    const triggers = ['saldo', 'balance', 'dinero', 'cuanto tengo'];
-    return triggers.some(t => text.includes(t));
-  }
-
-  isHistoryTrigger(text) {
-    const triggers = ['historial', 'mis apuestas', 'apuestas', 'history'];
-    return triggers.some(t => text.includes(t));
-  }
-
-  isOddsTrigger(text) {
-    const triggers = ['momios', 'momio', 'cuotas', 'deportes', 'partidos', 'juegos'];
-    return triggers.some(t => text.includes(t));
-  }
-
-  isCancelBetTrigger(text) {
-    const triggers = ['cancelar apuesta', 'cancelar', 'cancel'];
-    return triggers.some(t => text.includes(t));
+    return ['hola', 'menu', 'menú', 'ayuda', 'opciones', 'inicio', 'help'].includes(text);
   }
 }
 
