@@ -14,6 +14,22 @@ class BotController {
   async handleMessage(from, message) {
     try {
       const msgType = message.type;
+      const state = userStates.get(from);
+
+      // Permitir el flujo de registro sin verificar
+      const isRegistrationFlow =
+        state?.type === 'awaiting_client_id' ||
+        (msgType === 'interactive' && ['btn_register', 'btn_already'].includes(
+          message.interactive?.button_reply?.id || message.interactive?.list_reply?.id
+        ));
+
+      if (!isRegistrationFlow) {
+        const verification = await strendusAPI.verifyUser(from);
+        if (!verification.exists) {
+          const msgData = whatsappService.buildUnregisteredMessage();
+          return whatsappService.sendButtons(from, msgData.body, msgData.buttons);
+        }
+      }
 
       if (msgType === 'text') {
         await this.handleTextMessage(from, message.text.body);
