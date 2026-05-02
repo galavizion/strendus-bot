@@ -109,10 +109,10 @@ class ResultsService {
 
         await whatsappService.sendText(bet.userPhone, message);
       } else {
-        // Usuario perdió - mensaje neutral
-        const message = `📊 Partido finalizado\n\n` +
+        const message = `😔 Perdiste esta apuesta\n\n` +
                         `${bet.game.home_team} vs ${bet.game.away_team}\n` +
-                        `Resultado: ${result.homeScore} - ${result.awayScore}\n\n` +
+                        `Resultado final: ${result.homeScore} - ${result.awayScore}\n\n` +
+                        `Tu apuesta: ${bet.team} (${bet.odds}) - $${bet.amount.toLocaleString('es-MX')}\n\n` +
                         `💰 Saldo actual: $${newBalance.toLocaleString('es-MX')} MXN`;
 
         await whatsappService.sendText(bet.userPhone, message);
