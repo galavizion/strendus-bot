@@ -1,11 +1,13 @@
 const { createClient } = require('@supabase/supabase-js');
+const ws = require('ws');
 
 let _client = null;
 function db() {
   if (!_client) {
     _client = createClient(
       process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY
+      process.env.SUPABASE_SERVICE_KEY,
+      { realtime: { transport: ws } }
     );
   }
   return _client;
